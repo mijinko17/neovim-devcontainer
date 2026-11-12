@@ -56,8 +56,8 @@ RUN set -eux; \
 RUN npm install -g "@devcontainers/cli@${DEVCONTAINER_CLI_VERSION}" \
     && npm cache clean --force
 
-# ホストに ~/.config/nvim がないときに使う既定設定。
-# ユーザー設定が見つからないと、Neovim は $XDG_CONFIG_DIRS/nvim/init.lua を読む。
+# 汎用コンテナの Neovim の設定。ホストの設定はマウントしないので、常にこれを使う。
+# ユーザー設定(~/.config/nvim)が見つからないと、Neovim は $XDG_CONFIG_DIRS/nvim/init.lua を読む。
 COPY image/config/init.lua /etc/xdg/nvim/init.lua
 
 # 本プラグイン。エントリポイントが読み込む。

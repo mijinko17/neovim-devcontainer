@@ -36,8 +36,6 @@ pub struct RunSpec {
     pub docker_sock: PathBuf,
     /// Docker ソケットの所有グループ。コンテナ内のユーザーに `--group-add` で付ける。
     pub docker_gid: u32,
-    /// ホストの Neovim 設定ディレクトリ。なければイメージ同梱の既定設定を使う。
-    pub nvim_config: Option<PathBuf>,
     /// 設定ファイルで指定された追加のマウント(`--mount` の値)。
     pub extra_mounts: Vec<String>,
     /// コンテナに引き継ぐ端末関連の環境変数。
@@ -109,15 +107,6 @@ impl RunSpec {
             Path::new(CONTAINER_DOCKER_SOCK),
             false,
         ));
-
-        if let Some(config) = &self.nvim_config {
-            args.push("--mount".into());
-            args.push(bind_mount(
-                config,
-                &Path::new(CONTAINER_HOME).join(".config/nvim"),
-                true,
-            ));
-        }
 
         for (volume, rel) in PERSISTENT_VOLUMES {
             args.push("--mount".into());
@@ -193,7 +182,6 @@ mod tests {
             gid: 1001,
             docker_sock: "/var/run/docker.sock".into(),
             docker_gid: 998,
-            nvim_config: None,
             extra_mounts: vec![],
             env: vec![],
         }
@@ -286,20 +274,6 @@ mod tests {
                 "{path} は受け付けるべき"
             );
         }
-    }
-
-    #[test]
-    fn mounts_nvim_config_readonly() {
-        let args = RunSpec {
-            nvim_config: Some("/home/me/dotfiles/nvim".into()),
-            ..spec()
-        }
-        .to_args();
-        assert!(has_pair(
-            &args,
-            "--mount",
-            "type=bind,source=/home/me/dotfiles/nvim,target=/home/nvim-dc/.config/nvim,readonly"
-        ));
     }
 
     #[test]

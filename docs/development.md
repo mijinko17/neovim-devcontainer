@@ -62,7 +62,7 @@ mounts = [
 | 実行ユーザー | ホストの UID/GID。Docker ソケットの所有グループを `--group-add` で追加 |
 | ワークスペース | ホストと同じ絶対パスで bind mount し、作業ディレクトリにする |
 | Docker ソケット | `docker context`(`DOCKER_HOST` を含む)が指すホストのソケットを、コンテナの `/var/run/docker.sock` に |
-| Neovim の設定 | ホストの `~/.config/nvim` があれば `/home/nvim-dc/.config/nvim` に読み取り専用で。シンボリックリンクは実体を辿る。なければイメージ同梱の `/etc/xdg/nvim/init.lua` |
+| Neovim の設定 | ホストの設定はマウントせず、イメージ同梱の `/etc/xdg/nvim/init.lua` を使う |
 | 永続化 | named volume `nvim-dc-data` / `nvim-dc-state` / `nvim-dc-cache` |
 | ソケット | named volume `nvim-dc-sockets` を `/run/nvim-dc` に。devcontainer の中の nvim サーバとの通信に使う |
 | 環境変数 | `TERM` / `COLORTERM` / `TERM_PROGRAM` をホストから引き継ぐ。イメージに端末定義がない `TERM` は `xterm-256color` に置き換える。プラグイン用に `NVIM_DC_WORKSPACE`(ワークスペース)と `NVIM_DC_IMAGE`(汎用イメージ)を渡す |

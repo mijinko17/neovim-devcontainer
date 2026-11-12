@@ -50,7 +50,7 @@
 - **ワークスペース**: ホストと同じ絶対パスでマウントする。devcontainer を作るのはホストの Docker デーモンなので、bind mount のパスがホスト基準で解釈されるためです。
 - **Docker ソケット**: `/var/run/docker.sock` をマウントし、ソケットのグループを `--group-add` で付ける。
 - **実行ユーザー**: ホストの UID/GID で動かす。ワークスペースに root 所有のファイルができるのを防ぐためです。
-- **Neovim の設定**: ホストに `~/.config/nvim` があれば読み取り専用でマウントする。なければイメージ同梱の既定設定を使う。
+- **Neovim の設定**: ホストの `~/.config/nvim` はマウントしない。汎用コンテナではイメージ同梱の既定設定を使う。
 - **永続化**: Neovim の data / state / cache を named volume に置く。
 
 ### 実装
@@ -161,7 +161,9 @@ devcontainer の中で `nvim --headless --listen <socket>` を起動し、汎用
 
 マージするのはプラグインの「宣言」です。インストールされた実体はホストや汎用コンテナと共有しません。
 
-**ローカル側**は、汎用コンテナが持つ Neovim の設定(ホストの `~/.config/nvim` をマウントしたもの)です。devcontainer にも読み取り専用でマウントし、そのまま読み込みます。
+**ローカル側**は、汎用コンテナが持つ Neovim の設定です。devcontainer にも読み取り専用でマウントし、そのまま読み込みます。
+
+> **未決**: 当初はホストの `~/.config/nvim` をマウントしてローカル側にする予定でしたが、ランチャーはホストの設定をマウントしないことにしました。ローカル側の設定をどこから持ってくるかは、ステップ3で決め直します。
 
 **devcontainer 側**は、`devcontainer.json` の `customizations.neovim` に宣言します。`customizations` は仕様が定めるツール別の拡張ポイントで、`customizations.vscode.extensions` と同じ位置づけです。
 

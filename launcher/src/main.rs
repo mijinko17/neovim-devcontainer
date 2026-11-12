@@ -175,12 +175,6 @@ fn is_terminal() -> bool {
     std::io::stdin().is_terminal() && std::io::stdout().is_terminal()
 }
 
-/// ホストの Neovim 設定ディレクトリ。シンボリックリンク(dotfiles 管理など)は実体を辿る。
-fn nvim_config_dir(home: &Path) -> Option<PathBuf> {
-    let dir = config::config_home(xdg_config_home().as_deref(), home).join("nvim");
-    dir.canonicalize().ok().filter(|p| p.is_dir())
-}
-
 fn build_spec(path: Option<PathBuf>, config: Config) -> Result<RunSpec, String> {
     if !is_terminal() {
         return Err("端末から実行してください(標準入出力が端末ではありません)".into());
@@ -188,7 +182,6 @@ fn build_spec(path: Option<PathBuf>, config: Config) -> Result<RunSpec, String> 
 
     let (workspace, open_file) = resolve_target(path)?;
     run::check_workspace(&workspace)?;
-    let home = home_dir()?;
 
     let docker_sock = docker_sock()?;
     let docker_gid = std::fs::metadata(&docker_sock)
@@ -211,7 +204,6 @@ fn build_spec(path: Option<PathBuf>, config: Config) -> Result<RunSpec, String> 
         gid,
         docker_sock,
         docker_gid,
-        nvim_config: nvim_config_dir(&home),
         extra_mounts: config.mounts,
         env,
     })
