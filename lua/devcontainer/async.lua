@@ -12,6 +12,7 @@ function M.fail(msg)
   error(setmetatable({ message = msg }, Failure), 0)
 end
 
+--- 待っていたコルーチンを再開する。エラーで終わったら利用者に通知する。
 local function resume(co, ...)
   local ok, err = coroutine.resume(co, ...)
   if not ok then
@@ -19,6 +20,7 @@ local function resume(co, ...)
     vim.notify(msg, vim.log.levels.ERROR)
   end
 end
+M.resume = resume
 
 --- 想定外のエラーにはトレースバックを付ける。fail() のエラーはそのまま通す。
 local function with_traceback(err)

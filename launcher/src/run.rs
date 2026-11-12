@@ -23,6 +23,9 @@ pub const PERSISTENT_VOLUMES: [(&str, &str); 3] = [
 /// どのユーザーでもソケットを作れる。
 pub const SOCKET_VOLUME: (&str, &str) = ("nvim-dc-sockets", "/run/nvim-dc");
 
+/// ホストエージェント(`agent.rs`)のディレクトリをマウントする、コンテナ内の場所。
+pub const CONTAINER_HOST_AGENT_DIR: &str = "/run/nvim-dc-host";
+
 #[derive(Debug, Clone)]
 pub struct RunSpec {
     pub image: String,
@@ -36,6 +39,8 @@ pub struct RunSpec {
     pub docker_sock: PathBuf,
     /// Docker ソケットの所有グループ。コンテナ内のユーザーに `--group-add` で付ける。
     pub docker_gid: u32,
+    /// ホストエージェントのソケットがあるホスト側のディレクトリ。
+    pub host_agent_dir: Option<PathBuf>,
     /// 設定ファイルで指定された追加のマウント(`--mount` の値)。
     pub extra_mounts: Vec<String>,
     /// コンテナに引き継ぐ端末関連の環境変数。
@@ -126,6 +131,18 @@ impl RunSpec {
         args.push("--env".into());
         args.push(format!("NVIM_DC_IMAGE={}", self.image));
 
+        // プラグインは、ホストで評価されるべきもの(環境変数と initializeCommand)を
+        // このソケット経由でランチャーに依頼する。
+        if let Some(dir) = &self.host_agent_dir {
+            args.push("--mount".into());
+            args.push(bind_mount(dir, Path::new(CONTAINER_HOST_AGENT_DIR), false));
+            args.push("--env".into());
+            args.push(format!(
+                "NVIM_DC_HOST_SOCK={CONTAINER_HOST_AGENT_DIR}/{}",
+                crate::agent::SOCKET_NAME
+            ));
+        }
+
         for mount in &self.extra_mounts {
             args.push("--mount".into());
             args.push(mount.clone());
@@ -182,6 +199,7 @@ mod tests {
             gid: 1001,
             docker_sock: "/var/run/docker.sock".into(),
             docker_gid: 998,
+            host_agent_dir: None,
             extra_mounts: vec![],
             env: vec![],
         }
@@ -233,6 +251,7 @@ mod tests {
         assert!(has_pair(&args, "--env", "NVIM_DC_IMAGE=nvim-dc:dev"));
         assert_eq!(args.last().unwrap(), "nvim-dc:dev");
         assert!(!args.iter().any(|a| a.contains(".config/nvim")));
+        assert!(!args.iter().any(|a| a.contains("NVIM_DC_HOST_SOCK")));
     }
 
     #[test]
@@ -287,6 +306,25 @@ mod tests {
             &args,
             "--mount",
             "type=bind,source=/run/user/1000/docker.sock,target=/var/run/docker.sock"
+        ));
+    }
+
+    #[test]
+    fn mounts_host_agent_dir() {
+        let args = RunSpec {
+            host_agent_dir: Some("/run/user/1000/nvim-dc/42".into()),
+            ..spec()
+        }
+        .to_args();
+        assert!(has_pair(
+            &args,
+            "--mount",
+            "type=bind,source=/run/user/1000/nvim-dc/42,target=/run/nvim-dc-host"
+        ));
+        assert!(has_pair(
+            &args,
+            "--env",
+            "NVIM_DC_HOST_SOCK=/run/nvim-dc-host/agent.sock"
         ));
     }
 

@@ -1,18 +1,22 @@
 //! nvim-dc: 汎用 Neovim コンテナを起動するランチャー。
 //!
-//! 行うのは引数とパスの解決、`docker run` の組み立てと実行だけ。
-//! devcontainer に関する判断はすべてプラグイン側に置く。
+//! 行うのは引数とパスの解決、`docker run` の組み立てと実行、それにホストでしか
+//! できない処理の肩代わり(`agent.rs`)だけ。devcontainer に関する判断はすべて
+//! プラグイン側に置く。
 
+mod agent;
 mod config;
 mod run;
 
 use std::ffi::OsString;
 use std::io::IsTerminal;
 use std::os::unix::fs::MetadataExt;
-use std::os::unix::process::CommandExt;
+use std::os::unix::process::{CommandExt, ExitStatusExt};
 use std::path::{Path, PathBuf};
-use std::process::{Command, ExitCode, Stdio};
+use std::process::{Command, ExitCode, ExitStatus, Stdio};
+use std::sync::atomic::{AtomicI32, Ordering};
 
+use agent::Agent;
 use config::Config;
 use run::{PASSTHROUGH_ENV, RunSpec};
 
@@ -55,11 +59,11 @@ fn main() -> ExitCode {
     let result = parse_args(&args).and_then(|cmd| match cmd {
         Cmd::Help => {
             println!("{USAGE}");
-            Ok(())
+            Ok(ExitCode::SUCCESS)
         }
         Cmd::Version => {
             println!("nvim-dc {}", env!("CARGO_PKG_VERSION"));
-            Ok(())
+            Ok(ExitCode::SUCCESS)
         }
         Cmd::Pull => {
             let config = load_config()?;
@@ -67,12 +71,11 @@ fn main() -> ExitCode {
         }
         Cmd::Open(path) => {
             let config = load_config()?;
-            let spec = build_spec(path, config)?;
-            exec_docker(&spec.to_args())
+            open(build_spec(path, config)?)
         }
     });
     match result {
-        Ok(()) => ExitCode::SUCCESS,
+        Ok(code) => code,
         Err(e) => {
             eprintln!("nvim-dc: {e}");
             ExitCode::FAILURE
@@ -204,13 +207,96 @@ fn build_spec(path: Option<PathBuf>, config: Config) -> Result<RunSpec, String> 
         gid,
         docker_sock,
         docker_gid,
+        host_agent_dir: None,
         extra_mounts: config.mounts,
         env,
     })
 }
 
+/// ホストエージェントのソケットを置くディレクトリ。ランチャーのプロセスごとに分ける。
+///
+/// `XDG_RUNTIME_DIR` があればその下に置く。ログインしているユーザー専用で、ログアウト時に
+/// 消えるため。なければ一時ディレクトリの下に、ユーザーごとのディレクトリを作る。
+fn agent_dir(xdg_runtime_dir: Option<&str>, uid: u32, pid: u32) -> PathBuf {
+    let base = match xdg_runtime_dir {
+        Some(dir) if Path::new(dir).is_absolute() => Path::new(dir).join("nvim-dc"),
+        _ => std::env::temp_dir().join(format!("nvim-dc-{uid}")),
+    };
+    base.join(pid.to_string())
+}
+
+/// 汎用コンテナを起動し、終了するまでホストエージェントを動かす。
+///
+/// `docker run` は exec せずに子プロセスにする。コンテナが動いているあいだ、ランチャーが
+/// ホストに残って依頼を受けるため。端末は子がそのまま引き継ぐ。
+fn open(mut spec: RunSpec) -> Result<ExitCode, String> {
+    let xdg_runtime_dir = std::env::var("XDG_RUNTIME_DIR").ok();
+    let start = |xdg_runtime_dir: Option<&str>| {
+        let dir = agent_dir(xdg_runtime_dir, spec.uid, std::process::id());
+        Agent::start(dir, spec.workspace.clone(), spec.uid)
+    };
+    // XDG_RUNTIME_DIR が実在しない、または他のユーザーのもの(su の直後など)で使えない
+    // ときは、一時ディレクトリの下でやり直す。
+    let agent = start(xdg_runtime_dir.as_deref())
+        .or_else(|e| match xdg_runtime_dir {
+            Some(_) => start(None),
+            None => Err(e),
+        })
+        .map_err(|e| format!("ホストエージェントを起動できません: {e}"))?;
+    spec.host_agent_dir = Some(agent.dir().to_path_buf());
+
+    let mut child = Command::new("docker")
+        .args(spec.to_args())
+        .spawn()
+        .map_err(|e| format!("docker を起動できません: {e}"))?;
+    forward_signals_to(&child);
+    let status = child.wait();
+    DOCKER_PID.store(0, Ordering::SeqCst);
+    drop(agent);
+    let status = status.map_err(|e| format!("docker の終了を待てません: {e}"))?;
+    Ok(exit_code(status))
+}
+
+/// 終了を求めるシグナルの転送先(`docker run` の PID)。0 なら転送しない。
+static DOCKER_PID: AtomicI32 = AtomicI32::new(0);
+
+extern "C" fn forward_signal(signal: libc::c_int) {
+    let pid = DOCKER_PID.load(Ordering::SeqCst);
+    if pid > 0 {
+        // SAFETY: kill は async-signal-safe。
+        unsafe { libc::kill(pid, signal) };
+    }
+}
+
+/// ランチャーに届いた終了のシグナルを、`docker run` に転送する。
+///
+/// exec していたときは、シグナルは docker に直接届いていた。子プロセスにした今は、
+/// 転送しないとランチャーだけが終わり、docker が残って、エージェントのディレクトリも
+/// 消されない。転送して docker が終われば、いつもどおり後始末をして終了する。
+fn forward_signals_to(child: &std::process::Child) {
+    let Ok(pid) = i32::try_from(child.id()) else {
+        return;
+    };
+    DOCKER_PID.store(pid, Ordering::SeqCst);
+    let handler = forward_signal as extern "C" fn(libc::c_int) as libc::sighandler_t;
+    for signal in [libc::SIGTERM, libc::SIGHUP, libc::SIGINT, libc::SIGQUIT] {
+        // SAFETY: ハンドラは async-signal-safe な処理(アトミックの読み出しと kill)しかしない。
+        unsafe { libc::signal(signal, handler) };
+    }
+}
+
+/// 子プロセスの終了状態を、そのままランチャーの終了コードにする。
+/// シグナルで終わったときは、シェルの慣習に合わせて 128 + シグナル番号にする。
+fn exit_code(status: ExitStatus) -> ExitCode {
+    let code = status
+        .code()
+        .or_else(|| status.signal().map(|signal| 128 + signal))
+        .unwrap_or(1);
+    ExitCode::from(u8::try_from(code).unwrap_or(1))
+}
+
 /// `docker` を exec で起動し、このプロセスを置き換える。成功すると戻らない。
-fn exec_docker(args: &[String]) -> Result<(), String> {
+fn exec_docker(args: &[String]) -> Result<ExitCode, String> {
     let err = Command::new("docker").args(args).exec();
     Err(format!("docker を起動できません: {err}"))
 }
@@ -280,6 +366,26 @@ mod tests {
         );
 
         std::fs::remove_dir_all(&base).unwrap();
+    }
+
+    #[test]
+    fn agent_dir_prefers_xdg_runtime_dir() {
+        assert_eq!(
+            agent_dir(Some("/run/user/1000"), 1000, 42),
+            PathBuf::from("/run/user/1000/nvim-dc/42")
+        );
+        let fallback = std::env::temp_dir().join("nvim-dc-1000/42");
+        assert_eq!(agent_dir(None, 1000, 42), fallback);
+        assert_eq!(agent_dir(Some("relative"), 1000, 42), fallback);
+    }
+
+    #[test]
+    fn exit_code_follows_child() {
+        let code = |raw| format!("{:?}", exit_code(ExitStatus::from_raw(raw)));
+        assert_eq!(code(0), format!("{:?}", ExitCode::SUCCESS));
+        assert_eq!(code(3 << 8), format!("{:?}", ExitCode::from(3)));
+        // SIGTERM(15) で終了
+        assert_eq!(code(15), format!("{:?}", ExitCode::from(143)));
     }
 
     #[test]

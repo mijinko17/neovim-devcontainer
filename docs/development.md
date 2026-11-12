@@ -65,6 +65,7 @@ mounts = [
 | Neovim の設定 | ホストの設定はマウントせず、イメージ同梱の `/etc/xdg/nvim/init.lua` を使う |
 | 永続化 | named volume `nvim-dc-data` / `nvim-dc-state` / `nvim-dc-cache` |
 | ソケット | named volume `nvim-dc-sockets` を `/run/nvim-dc` に。devcontainer の中の nvim サーバとの通信に使う |
+| ホストエージェント | ランチャーが待ち受けるソケットのディレクトリ(`$XDG_RUNTIME_DIR/nvim-dc/<PID>`)を `/run/nvim-dc-host` に。プラグインが、ホストの環境変数の取得と `initializeCommand` の実行を依頼する。ソケットのパスは `NVIM_DC_HOST_SOCK` で渡す |
 | 環境変数 | `TERM` / `COLORTERM` / `TERM_PROGRAM` をホストから引き継ぐ。イメージに端末定義がない `TERM` は `xterm-256color` に置き換える。プラグイン用に `NVIM_DC_WORKSPACE`(ワークスペース)と `NVIM_DC_IMAGE`(汎用イメージ)を渡す |
 
 イメージは任意の UID で動くように、次のようにしています。
