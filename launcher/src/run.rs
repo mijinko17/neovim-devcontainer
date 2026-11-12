@@ -16,6 +16,13 @@ pub const PERSISTENT_VOLUMES: [(&str, &str); 3] = [
     ("nvim-dc-cache", ".cache/nvim"),
 ];
 
+/// UI 側と devcontainer 側の nvim が通信する Unix ソケットを置く named volume と、そのマウント先。
+///
+/// プラグイン(`lua/devcontainer/env.lua`)も同じ名前とパスを使う。イメージ側でマウント先を
+/// 1777 で用意してあるので、volume は初回マウント時にその権限を引き継ぎ、devcontainer 側の
+/// どのユーザーでもソケットを作れる。
+pub const SOCKET_VOLUME: (&str, &str) = ("nvim-dc-sockets", "/run/nvim-dc");
+
 #[derive(Debug, Clone)]
 pub struct RunSpec {
     pub image: String,
@@ -46,7 +53,7 @@ pub const PASSTHROUGH_ENV: [&str; 3] = ["TERM", "COLORTERM", "TERM_PROGRAM"];
 /// (どちらかがもう一方の祖先か同一である)パスはワークスペースにできない。
 /// たとえば `/usr/local/bin` をワークスペースにすると ENTRYPOINT の nvim が隠れ、
 /// `/home` にすると HOME と永続化先が隠れる。
-const PROTECTED_PATHS: [&str; 13] = [
+const PROTECTED_PATHS: [&str; 14] = [
     "/bin",
     "/sbin",
     "/lib",
@@ -54,6 +61,7 @@ const PROTECTED_PATHS: [&str; 13] = [
     "/usr",
     "/etc",
     "/opt/nvim",
+    "/opt/nvim-dc",
     "/run",
     "/var/run",
     "/proc",
@@ -117,6 +125,17 @@ impl RunSpec {
                 "type=volume,source={volume},target={CONTAINER_HOME}/{rel}"
             ));
         }
+
+        let (volume, target) = SOCKET_VOLUME;
+        args.push("--mount".into());
+        args.push(format!("type=volume,source={volume},target={target}"));
+
+        // プラグインが使う。ワークスペースは `:cd` でカレントディレクトリが変わっても
+        // 見失わないように渡す。イメージは devcontainer に Neovim 本体を渡すときに使う。
+        args.push("--env".into());
+        args.push(format!("NVIM_DC_WORKSPACE={}", self.workspace.display()));
+        args.push("--env".into());
+        args.push(format!("NVIM_DC_IMAGE={}", self.image));
 
         for mount in &self.extra_mounts {
             args.push("--mount".into());
@@ -217,6 +236,13 @@ mod tests {
             "--mount",
             "type=volume,source=nvim-dc-cache,target=/home/nvim-dc/.cache/nvim"
         ));
+        assert!(has_pair(
+            &args,
+            "--mount",
+            "type=volume,source=nvim-dc-sockets,target=/run/nvim-dc"
+        ));
+        assert!(has_pair(&args, "--env", "NVIM_DC_WORKSPACE=/home/me/project"));
+        assert!(has_pair(&args, "--env", "NVIM_DC_IMAGE=nvim-dc:dev"));
         assert_eq!(args.last().unwrap(), "nvim-dc:dev");
         assert!(!args.iter().any(|a| a.contains(".config/nvim")));
     }

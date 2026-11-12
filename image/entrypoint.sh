@@ -22,4 +22,6 @@ if [ -n "${TERM:-}" ] && ! infocmp "$TERM" >/dev/null 2>&1; then
   export TERM=xterm-256color
 fi
 
-exec nvim "$@"
+# 本プラグインは runtimepath ではなく --cmd で読み込む。ユーザー設定のプラグインマネージャ
+# (lazy.nvim など)が runtimepath をリセットしても、コマンドが消えないようにするため。
+exec nvim --cmd 'source /opt/nvim-dc/plugin/devcontainer.lua' "$@"

@@ -1,0 +1,5 @@
+# イメージに入れるのは image/、plugin/、lua/ だけ。
+*
+!image/
+!plugin/
+!lua/

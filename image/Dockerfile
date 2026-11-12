@@ -2,6 +2,9 @@
 #
 # UI 側の Neovim が動く場所。devcontainer の作成と管理もここから行う。
 # 実行ユーザーはランチャーがホストの UID/GID で指定するので、どの UID でも動くように作る。
+#
+# プラグイン(lua/、plugin/)を入れるので、ビルドコンテキストはリポジトリのルートにする。
+#   docker build -t nvim-dc:dev -f image/Dockerfile .
 
 ARG DOCKER_VERSION=29
 ARG NODE_VERSION=22
@@ -33,7 +36,8 @@ RUN userdel --remove node \
 COPY --from=docker-cli /usr/local/bin/docker /usr/local/bin/docker
 COPY --from=docker-cli /usr/local/libexec/docker/cli-plugins /usr/local/libexec/docker/cli-plugins
 
-# Neovim は /opt/nvim に置く。後のステップで、このディレクトリを devcontainer 側にも渡す。
+# Neovim は /opt/nvim に置く。プラグインがこのディレクトリを named volume にコピーして、
+# devcontainer 側にも渡す。
 RUN set -eux; \
     case "${TARGETARCH}" in \
       amd64) arch=x86_64; sha="${NVIM_SHA256_X86_64}" ;; \
@@ -54,23 +58,30 @@ RUN npm install -g "@devcontainers/cli@${DEVCONTAINER_CLI_VERSION}" \
 
 # ホストに ~/.config/nvim がないときに使う既定設定。
 # ユーザー設定が見つからないと、Neovim は $XDG_CONFIG_DIRS/nvim/init.lua を読む。
-COPY config/init.lua /etc/xdg/nvim/init.lua
+COPY image/config/init.lua /etc/xdg/nvim/init.lua
+
+# 本プラグイン。エントリポイントが読み込む。
+COPY plugin /opt/nvim-dc/plugin
+COPY lua /opt/nvim-dc/lua
 
 # どの UID で動いても書き込めるように、HOME と永続化先を 1777 で用意する。
 # named volume は初回マウント時にイメージ側のパーミッションを引き継ぐ。
+# /run/nvim-dc はソケット用の volume のマウント先。devcontainer 側のユーザーもここに
+# ソケットを作るので、同じく 1777 にしておく。
 ENV HOME=/home/nvim-dc \
     LANG=C.UTF-8
 RUN set -eux; \
     for d in "$HOME" "$HOME/.config" "$HOME/.local" "$HOME/.local/share" "$HOME/.local/state" \
              "$HOME/.local/share/nvim" "$HOME/.local/state/nvim" "$HOME/.cache" "$HOME/.cache/nvim"; do \
       mkdir -p "$d"; chmod 1777 "$d"; \
-    done
+    done; \
+    mkdir -p /run/nvim-dc; chmod 1777 /run/nvim-dc
 
 # 実行時の UID/GID を passwd / group に登録できるように、書き込み可能にしておく。
 # 登録がないと、Node の os.userInfo() や ssh など getpwuid を使うものが失敗する。
 # Docker ソケットをマウントする時点でホストの root 相当なので、権限の緩さは問題にしない。
 RUN chmod 666 /etc/passwd /etc/group
-COPY entrypoint.sh /usr/local/bin/nvim-dc-entrypoint
+COPY image/entrypoint.sh /usr/local/bin/nvim-dc-entrypoint
 
 WORKDIR /home/nvim-dc
 ENTRYPOINT ["nvim-dc-entrypoint"]

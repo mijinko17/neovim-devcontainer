@@ -124,10 +124,14 @@ Docker ソケットをマウントするので、このコンテナの中で動�
 
 ### devcontainer への Neovim の導入
 
-汎用コンテナと同じ Neovim のビルドを named volume に置き、devcontainer に読み取り専用でマウントします。
+汎用コンテナと同じ Neovim のビルドを named volume に置き、devcontainer にマウントします。
 
 - UI 側とサーバ側のバージョンが必ず一致する。
 - devcontainer のイメージを作り直す必要がない。
+
+volume はバージョンごとに `nvim-dc-nvim-<バージョン>` の名前で作ります。空の named volume を汎用イメージの `/opt/nvim` にマウントするとイメージ側の内容がコピーされるので、その仕組みで中身を入れます。devcontainer CLI の `--mount` は読み取り専用を指定できないので、マウントは読み書き可能になります。
+
+devcontainer CLI は、ワークスペースのパスから既存のコンテナを探して使い回します。VS Code などで作ったコンテナにはこのマウントがないので、その場合はコンテナの削除を促すエラーにします。
 
 Neovim の公式ビルドは glibc を前提にしているので、Alpine など musl 系のイメージではこの方法が使えません。その場合は `--additional-features` で Neovim を入れる Feature を注入する方式に切り替えます。
 
@@ -137,6 +141,19 @@ devcontainer の中で `nvim --headless --listen <socket>` を起動し、汎用
 
 - **経路**: 汎用コンテナと devcontainer の両方に同じ named volume をマウントし、その上の Unix ソケットで繋ぐ。
 - **繋ぎ替え**: 起動中の Neovim から、その場で接続先を切り替える `:connect` を使う。これが Neovim 0.12 以上を必須にする理由です。
+
+`:DevcontainerConnect` の流れは次のとおりです。
+
+1. `devcontainer up` で devcontainer を用意する(起動済みならそれを使う)。
+2. ソケット `/run/nvim-dc/<コンテナ ID の先頭12桁>.sock` の先でサーバが応答しなければ、`devcontainer exec` でサーバをバックグラウンドで起動する。`devcontainer exec` を使うのは、`remoteUser` や `remoteEnv`、`userEnvProbe` で決まる環境(PATH など)をサーバに引き継ぐためです。
+3. `:connect!` で UI を繋ぎ替え、汎用コンテナ側の nvim は止める。未保存の変更があるときは繋ぎ替えない。
+
+サーバは UI から独立して動くので、`:detach` で UI を外しても編集の状態が残り、次の `:DevcontainerConnect` でそのまま繋ぎ直せます。`:qa` するとサーバも終了します。
+
+サーバを起動するときは、次の2点に注意しています。
+
+- **umask**: `docker exec` で起動したプロセスは umask が 0000 になる(`docker run` では 0022)。そのままだと保存したファイルが誰でも書き込める権限になるので、`docker run` の既定と同じ 0022 に揃える。
+- **ソケットの権限**: devcontainer 側のユーザーは汎用コンテナの UID と違うことがある(`remoteUser` が root の場合など)。ソケットは 666 にして、どの UID からも接続できるようにする。
 
 ホスト側の Neovim で編集し、LSP だけを `docker exec` でコンテナ内で動かす方式は採りません。パスの変換などプラグインごとの対応が必要になり、破綻しやすいためです。
 
@@ -177,6 +194,7 @@ devcontainer の中で `nvim --headless --listen <socket>` を起動し、汎用
 ```
 launcher/   ランチャー(Rust クレート)
 image/      汎用 Neovim イメージの Dockerfile
+plugin/     プラグインのコマンド定義
 lua/        プラグイン本体
 docs/       ドキュメント
 .github/    リリース用ワークフロー
@@ -191,7 +209,7 @@ docs/       ドキュメント
    - 使えなかった場合の代案は、ランチャーが `nvim --server <socket> --remote-ui` を起動し直す方式だった。
 2. **named volume 上の Unix ソケット**: 2つのコンテナが同じ volume 上のソケットで通信できること。
    - **結果**: 成り立つ。一方のコンテナで `nvim --headless --listen` したソケットに、もう一方から `--remote-expr` で問い合わせて応答が返った。
-   - **注意**: 新規の named volume は root 所有になるので、root 以外で動くサーバはソケットを作れずに終了した。ソケット用の volume は、サーバ側のユーザーが書き込めるように権限を整えておく必要がある(ステップ2で対応する)。
+   - **注意**: 新規の named volume は root 所有になるので、root 以外で動くサーバはソケットを作れずに終了した。ソケット用の volume は、サーバ側のユーザーが書き込めるように権限を整えておく必要がある。ステップ2で、イメージ側のマウント先 `/run/nvim-dc` を 1777 で用意し、volume が初回マウント時にその権限を引き継ぐようにした。
    - 通らなかった場合の代案は、`docker exec -i` を経由した中継だった。
 
 `self_update` のフィーチャー指定は、名前は README と `Cargo.toml` で確認しましたが、ビルドは試していません(ステップ5で確かめる)。
@@ -204,4 +222,4 @@ docs/       ドキュメント
 4. **Rebuild / Down と仕上げ**: musl 系イメージ向けの Feature への切り替えを含む。
 5. **自己更新とリリース**: `update` サブコマンドと、リリース用のワークフロー。
 
-開発中は、リポジトリを汎用コンテナにマウントしてプラグインを読み込ませます。
+開発中は、リポジトリを汎用コンテナにマウントしてプラグインを読み込ませます(手順は [development.md](development.md))。

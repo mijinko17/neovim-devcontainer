@@ -4,8 +4,10 @@
 
 ## 汎用イメージのビルド
 
+プラグイン(`plugin/`、`lua/`)もイメージに入れるので、ビルドコンテキストはリポジトリのルートにします。
+
 ```sh
-docker build -t nvim-dc:dev image/
+docker build -t nvim-dc:dev -f image/Dockerfile .
 ```
 
 ## ランチャーのビルドとテスト
@@ -35,6 +37,14 @@ mounts = [
 launcher/target/"$(uname -m)"-unknown-linux-musl/release/nvim-dc [path]
 ```
 
+開発中のプラグインを、イメージを作り直さずに試すには、リポジトリをイメージ内のプラグインの場所(`/opt/nvim-dc`)に重ねてマウントします。
+
+```toml
+mounts = [
+  "type=bind,source=/workspaces/neovim-devcontainer,target=/opt/nvim-dc,readonly",
+]
+```
+
 `path` がディレクトリならそこをワークスペースにし、ファイルなら親ディレクトリをワークスペースにしてそのファイルを開きます。ファイルがシンボリックリンクでも、リンク先ではなく指定したパスの親ディレクトリをワークスペースにします。
 
 次の場合は起動せずにエラーにします。
@@ -54,9 +64,20 @@ launcher/target/"$(uname -m)"-unknown-linux-musl/release/nvim-dc [path]
 | Docker ソケット | `docker context`(`DOCKER_HOST` を含む)が指すホストのソケットを、コンテナの `/var/run/docker.sock` に |
 | Neovim の設定 | ホストの `~/.config/nvim` があれば `/home/nvim-dc/.config/nvim` に読み取り専用で。シンボリックリンクは実体を辿る。なければイメージ同梱の `/etc/xdg/nvim/init.lua` |
 | 永続化 | named volume `nvim-dc-data` / `nvim-dc-state` / `nvim-dc-cache` |
-| 環境変数 | `TERM` / `COLORTERM` / `TERM_PROGRAM` をホストから引き継ぐ。イメージに端末定義がない `TERM` は `xterm-256color` に置き換える |
+| ソケット | named volume `nvim-dc-sockets` を `/run/nvim-dc` に。devcontainer の中の nvim サーバとの通信に使う |
+| 環境変数 | `TERM` / `COLORTERM` / `TERM_PROGRAM` をホストから引き継ぐ。イメージに端末定義がない `TERM` は `xterm-256color` に置き換える。プラグイン用に `NVIM_DC_WORKSPACE`(ワークスペース)と `NVIM_DC_IMAGE`(汎用イメージ)を渡す |
 
 イメージは任意の UID で動くように、次のようにしています。
 
 - HOME(`/home/nvim-dc`)と永続化先のディレクトリを 1777 で用意する。
 - エントリポイント([image/entrypoint.sh](../image/entrypoint.sh))が、実行時の UID/GID を `/etc/passwd` と `/etc/group` に登録してから nvim を起動する。登録がないと、Node の `os.userInfo()` や ssh など、ユーザー情報を引くものが失敗するため。
+
+本プラグインは、エントリポイントが `--cmd` で `/opt/nvim-dc/plugin/devcontainer.lua` を読み込みます。runtimepath に頼らないので、ユーザー設定のプラグインマネージャ(lazy.nvim など)が runtimepath をリセットしてもコマンドは消えません。
+
+## 動作確認
+
+ワークスペースに `devcontainer.json` を置いて汎用コンテナを起動し、`:DevcontainerConnect` を実行します。初回は devcontainer のイメージのビルドで時間がかかり、その間は画面下に `devcontainer up` のログが出ます。
+
+- `:DevcontainerUp` は devcontainer を作成するだけで、接続はしない。
+- サーバのログは、ソケットと同じ `/run/nvim-dc/<コンテナ ID の先頭12桁>.log` にある。
+- 以前に別の方法(VS Code など)で作った devcontainer は、Neovim 用のマウントがないのでエラーになる。表示される `docker rm -f` でコンテナを削除してから実行し直す。
