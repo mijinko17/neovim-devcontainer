@@ -1,7 +1,7 @@
 -- 外部コマンドを順に待つ処理を、コールバックを入れ子にせずに書くための小さな道具。
 --
 -- run() に渡した関数はコルーチンの中で動き、system() や sleep() で待つあいだ
--- エディタを止めない。fail() で投げたエラーは、トレースバックなしで利用者に通知する。
+-- エディタを止めない。コールバックで終わる処理は await() で待てる。fail() で投げたエラーは、トレースバックなしで利用者に通知する。
 local M = {}
 
 local Failure = {}
@@ -20,7 +20,6 @@ local function resume(co, ...)
     vim.notify(msg, vim.log.levels.ERROR)
   end
 end
-M.resume = resume
 
 --- 想定外のエラーにはトレースバックを付ける。fail() のエラーはそのまま通す。
 local function with_traceback(err)
@@ -44,29 +43,38 @@ function M.run(fn, on_done)
   resume(co)
 end
 
+--- コールバックで終わりを知らせる処理を待つ。
+---
+--- start には done を渡す。done を呼ぶと、その引数を戻り値にして続きを再開する。
+--- done はどこから呼んでもよい(再開はメインループに戻ってから行う)。
+function M.await(start)
+  local co = assert(coroutine.running(), 'async.await はコルーチンの中で呼ぶ')
+  start(function(...)
+    local n, args = select('#', ...), { ... }
+    vim.schedule(function()
+      resume(co, unpack(args, 1, n))
+    end)
+  end)
+  return coroutine.yield()
+end
+
 --- vim.system を呼んで、終わるまで待つ。戻り値は vim.SystemCompleted。
 ---
 --- 実行ファイルが見つからないときは fail() で知らせる。
 function M.system(cmd, opts)
-  local co = assert(coroutine.running(), 'async.system はコルーチンの中で呼ぶ')
-  local ok, err = pcall(vim.system, cmd, opts or {}, function(res)
-    vim.schedule(function()
-      resume(co, res)
-    end)
+  return M.await(function(done)
+    local ok, err = pcall(vim.system, cmd, opts or {}, done)
+    if not ok then
+      M.fail(('%s を実行できません: %s'):format(cmd[1], err))
+    end
   end)
-  if not ok then
-    M.fail(('%s を実行できません: %s'):format(cmd[1], err))
-  end
-  return coroutine.yield()
 end
 
 --- ms ミリ秒待つ。
 function M.sleep(ms)
-  local co = assert(coroutine.running(), 'async.sleep はコルーチンの中で呼ぶ')
-  vim.defer_fn(function()
-    resume(co)
-  end, ms)
-  coroutine.yield()
+  M.await(function(done)
+    vim.defer_fn(done, ms)
+  end)
 end
 
 return M

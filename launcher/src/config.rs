@@ -36,7 +36,7 @@ pub fn config_path(xdg_config_home: Option<&str>, home: &Path) -> PathBuf {
 }
 
 /// XDG の config ディレクトリ。空文字や相対パスは仕様どおり無視する。
-pub fn config_home(xdg_config_home: Option<&str>, home: &Path) -> PathBuf {
+fn config_home(xdg_config_home: Option<&str>, home: &Path) -> PathBuf {
     match xdg_config_home {
         Some(dir) if Path::new(dir).is_absolute() => PathBuf::from(dir),
         _ => home.join(".config"),

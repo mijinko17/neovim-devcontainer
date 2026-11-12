@@ -5,12 +5,12 @@
 use std::path::{Path, PathBuf};
 
 /// 汎用コンテナの中の HOME。イメージ側で用意してある。
-pub const CONTAINER_HOME: &str = "/home/nvim-dc";
+const CONTAINER_HOME: &str = "/home/nvim-dc";
 /// コンテナ内の Docker ソケットの位置。
-pub const CONTAINER_DOCKER_SOCK: &str = "/var/run/docker.sock";
+const CONTAINER_DOCKER_SOCK: &str = "/var/run/docker.sock";
 
 /// Neovim の data / state / cache を置く named volume と、そのマウント先(HOME からの相対)。
-pub const PERSISTENT_VOLUMES: [(&str, &str); 3] = [
+const PERSISTENT_VOLUMES: [(&str, &str); 3] = [
     ("nvim-dc-data", ".local/share/nvim"),
     ("nvim-dc-state", ".local/state/nvim"),
     ("nvim-dc-cache", ".cache/nvim"),
@@ -21,10 +21,10 @@ pub const PERSISTENT_VOLUMES: [(&str, &str); 3] = [
 /// プラグイン(`lua/devcontainer/env.lua`)も同じ名前とパスを使う。イメージ側でマウント先を
 /// 1777 で用意してあるので、volume は初回マウント時にその権限を引き継ぎ、devcontainer 側の
 /// どのユーザーでもソケットを作れる。
-pub const SOCKET_VOLUME: (&str, &str) = ("nvim-dc-sockets", "/run/nvim-dc");
+const SOCKET_VOLUME: (&str, &str) = ("nvim-dc-sockets", "/run/nvim-dc");
 
 /// ホストエージェント(`agent.rs`)のディレクトリをマウントする、コンテナ内の場所。
-pub const CONTAINER_HOST_AGENT_DIR: &str = "/run/nvim-dc-host";
+const CONTAINER_HOST_AGENT_DIR: &str = "/run/nvim-dc-host";
 
 #[derive(Debug, Clone)]
 pub struct RunSpec {
@@ -92,65 +92,68 @@ impl RunSpec {
     pub fn to_args(&self) -> Vec<String> {
         let mut args: Vec<String> =
             vec!["run".into(), "--rm".into(), "--init".into(), "-it".into()];
+        let mut option = |flag: &str, value: String| {
+            args.push(flag.into());
+            args.push(value);
+        };
 
         // ホストの UID/GID で動かし、ワークスペースに root 所有のファイルを作らない。
-        args.push("--user".into());
-        args.push(format!("{}:{}", self.uid, self.gid));
-        args.push("--group-add".into());
-        args.push(self.docker_gid.to_string());
+        option("--user", format!("{}:{}", self.uid, self.gid));
+        option("--group-add", self.docker_gid.to_string());
 
         // devcontainer を作るのはホストの Docker デーモンなので、bind mount のパスは
         // ホスト基準で解釈される。ワークスペースは同じ絶対パスでマウントする。
-        args.push("--mount".into());
-        args.push(bind_mount(&self.workspace, &self.workspace, false));
-        args.push("--workdir".into());
-        args.push(self.workspace.display().to_string());
+        option("--mount", bind_mount(&self.workspace, &self.workspace));
+        option("--workdir", self.workspace.display().to_string());
 
-        args.push("--mount".into());
-        args.push(bind_mount(
-            &self.docker_sock,
-            Path::new(CONTAINER_DOCKER_SOCK),
-            false,
-        ));
+        option(
+            "--mount",
+            bind_mount(&self.docker_sock, Path::new(CONTAINER_DOCKER_SOCK)),
+        );
 
         for (volume, rel) in PERSISTENT_VOLUMES {
-            args.push("--mount".into());
-            args.push(format!(
-                "type=volume,source={volume},target={CONTAINER_HOME}/{rel}"
-            ));
+            option(
+                "--mount",
+                format!("type=volume,source={volume},target={CONTAINER_HOME}/{rel}"),
+            );
         }
 
         let (volume, target) = SOCKET_VOLUME;
-        args.push("--mount".into());
-        args.push(format!("type=volume,source={volume},target={target}"));
+        option(
+            "--mount",
+            format!("type=volume,source={volume},target={target}"),
+        );
 
         // プラグインが使う。ワークスペースは `:cd` でカレントディレクトリが変わっても
         // 見失わないように渡す。イメージは devcontainer に Neovim 本体を渡すときに使う。
-        args.push("--env".into());
-        args.push(format!("NVIM_DC_WORKSPACE={}", self.workspace.display()));
-        args.push("--env".into());
-        args.push(format!("NVIM_DC_IMAGE={}", self.image));
+        option(
+            "--env",
+            format!("NVIM_DC_WORKSPACE={}", self.workspace.display()),
+        );
+        option("--env", format!("NVIM_DC_IMAGE={}", self.image));
 
         // プラグインは、ホストで評価されるべきもの(環境変数と initializeCommand)を
         // このソケット経由でランチャーに依頼する。
         if let Some(dir) = &self.host_agent_dir {
-            args.push("--mount".into());
-            args.push(bind_mount(dir, Path::new(CONTAINER_HOST_AGENT_DIR), false));
-            args.push("--env".into());
-            args.push(format!(
-                "NVIM_DC_HOST_SOCK={CONTAINER_HOST_AGENT_DIR}/{}",
-                crate::agent::SOCKET_NAME
-            ));
+            option(
+                "--mount",
+                bind_mount(dir, Path::new(CONTAINER_HOST_AGENT_DIR)),
+            );
+            option(
+                "--env",
+                format!(
+                    "NVIM_DC_HOST_SOCK={CONTAINER_HOST_AGENT_DIR}/{}",
+                    crate::agent::SOCKET_NAME
+                ),
+            );
         }
 
         for mount in &self.extra_mounts {
-            args.push("--mount".into());
-            args.push(mount.clone());
+            option("--mount", mount.clone());
         }
 
         for (key, value) in &self.env {
-            args.push("--env".into());
-            args.push(format!("{key}={value}"));
+            option("--env", format!("{key}={value}"));
         }
 
         args.push(self.image.clone());
@@ -165,16 +168,13 @@ impl RunSpec {
 }
 
 /// `--mount type=bind,...` の値を作る。
-fn bind_mount(source: &Path, target: &Path, readonly: bool) -> String {
-    let mut fields = vec![
+fn bind_mount(source: &Path, target: &Path) -> String {
+    [
         "type=bind".to_string(),
         csv_field(&format!("source={}", source.display())),
         csv_field(&format!("target={}", target.display())),
-    ];
-    if readonly {
-        fields.push("readonly".into());
-    }
-    fields.join(",")
+    ]
+    .join(",")
 }
 
 /// `--mount` の値は CSV として解釈されるので、カンマや引用符を含むフィールドはクォートする。
@@ -247,7 +247,11 @@ mod tests {
             "--mount",
             "type=volume,source=nvim-dc-sockets,target=/run/nvim-dc"
         ));
-        assert!(has_pair(&args, "--env", "NVIM_DC_WORKSPACE=/home/me/project"));
+        assert!(has_pair(
+            &args,
+            "--env",
+            "NVIM_DC_WORKSPACE=/home/me/project"
+        ));
         assert!(has_pair(&args, "--env", "NVIM_DC_IMAGE=nvim-dc:dev"));
         assert_eq!(args.last().unwrap(), "nvim-dc:dev");
         assert!(!args.iter().any(|a| a.contains(".config/nvim")));

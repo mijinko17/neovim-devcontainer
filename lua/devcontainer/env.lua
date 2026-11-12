@@ -11,23 +11,30 @@ M.socket_dir = '/run/nvim-dc'
 --- devcontainer の中で、汎用イメージの Neovim 本体(/opt/nvim)をマウントする場所。
 M.runtime_dir = '/opt/nvim-dc-runtime'
 
---- ランチャーから起動された汎用コンテナの中かどうか。
-function M.is_ui_side()
-  return vim.env.NVIM_DC_IMAGE ~= nil and vim.env.NVIM_DC_IMAGE ~= ''
-end
-
---- ワークスペースのパス(ホストと同じ絶対パス)。
-function M.workspace()
-  local ws = vim.env.NVIM_DC_WORKSPACE
-  if ws and ws ~= '' then
-    return ws
-  end
-  return vim.fn.getcwd()
+--- ランチャーが渡す環境変数。未設定と空文字は nil にする。
+local function launcher_env(name)
+  local value = vim.env[name]
+  return value ~= '' and value or nil
 end
 
 --- 汎用イメージの参照。devcontainer に Neovim 本体を渡すときに使う。
 function M.image()
-  return M.is_ui_side() and vim.env.NVIM_DC_IMAGE or nil
+  return launcher_env('NVIM_DC_IMAGE')
+end
+
+--- ランチャーから起動された汎用コンテナの中かどうか。
+function M.is_ui_side()
+  return M.image() ~= nil
+end
+
+--- ワークスペースのパス(ホストと同じ絶対パス)。
+function M.workspace()
+  return launcher_env('NVIM_DC_WORKSPACE') or vim.fn.getcwd()
+end
+
+--- ホストエージェントのソケット。ランチャーを通さずに起動したときは nil。
+function M.host_socket()
+  return launcher_env('NVIM_DC_HOST_SOCK')
 end
 
 --- ワークスペースの devcontainer.json。devcontainer CLI の既定と同じ順に探す。

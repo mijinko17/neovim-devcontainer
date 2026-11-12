@@ -231,12 +231,8 @@ local function prepare_config(workspace, config_path, cli)
     return {}, nothing
   end
   -- initializeCommand がなければ、CLI を1回余分に起動してまで設定を読む必要はない。
-  local file = io.open(config_path)
-  local text = file and file:read('*a')
-  if file then
-    file:close()
-  end
-  if text and not text:find('initializeCommand', 1, true) then
+  local ok_read, lines = pcall(vim.fn.readfile, config_path)
+  if ok_read and not table.concat(lines, '\n'):find('initializeCommand', 1, true) then
     return {}, nothing
   end
   local res = check(
@@ -259,9 +255,7 @@ local function prepare_config(workspace, config_path, cli)
   config.initializeCommand = nil
   config.configFilePath = nil -- read-configuration が付ける情報で、設定の一部ではない
   local path = vim.fn.tempname() .. '.json'
-  local file = assert(io.open(path, 'w'))
-  file:write(vim.json.encode(config))
-  file:close()
+  vim.fn.writefile({ vim.json.encode(config) }, path)
   return { '--override-config', path }, function()
     os.remove(path)
   end
@@ -355,9 +349,9 @@ local function start_server(workspace, result, sock, cli)
   end
 end
 
---- 未保存の変更があるバッファの名前。
-local function modified_buffers()
-  return vim.iter(vim.api.nvim_list_bufs())
+--- 未保存の変更があるバッファがあれば fail() する。
+local function check_unmodified()
+  local names = vim.iter(vim.api.nvim_list_bufs())
     :filter(function(b)
       return vim.bo[b].modified and vim.bo[b].buftype == ''
     end)
@@ -366,6 +360,9 @@ local function modified_buffers()
       return name ~= '' and vim.fn.fnamemodify(name, ':~:.') or ('[No Name] ' .. b)
     end)
     :totable()
+  if #names > 0 then
+    async.fail('未保存の変更があります: ' .. table.concat(names, ', '))
+  end
 end
 
 --- devcontainer.json から devcontainer を作成する。
@@ -380,13 +377,8 @@ end
 ---
 --- 汎用コンテナ側の nvim は `:connect!` で止めるので、未保存の変更があれば中断する。
 function M.connect()
-  local modified = modified_buffers()
-  if #modified > 0 then
-    vim.notify('未保存の変更があります: ' .. table.concat(modified, ', '), vim.log.levels.ERROR)
-    return
-  end
-
   exclusive(function()
+    check_unmodified()
     local workspace = env.workspace()
     local cli = cli_env()
     local result = up(workspace, cli)
@@ -395,10 +387,7 @@ function M.connect()
       start_server(workspace, result, sock, cli)
     end
     -- 待っているあいだに編集された場合に備えて、もう一度確かめる。
-    modified = modified_buffers()
-    if #modified > 0 then
-      async.fail('未保存の変更があります: ' .. table.concat(modified, ', '))
-    end
+    check_unmodified()
     vim.cmd('connect! ' .. vim.fn.fnameescape(sock))
   end)
 end

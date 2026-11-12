@@ -90,12 +90,9 @@ fn home_dir() -> Result<PathBuf, String> {
         .ok_or_else(|| "HOME が設定されていません".to_string())
 }
 
-fn xdg_config_home() -> Option<String> {
-    std::env::var("XDG_CONFIG_HOME").ok()
-}
-
 fn load_config() -> Result<Config, String> {
-    let path = config::config_path(xdg_config_home().as_deref(), &home_dir()?);
+    let xdg_config_home = std::env::var("XDG_CONFIG_HOME").ok();
+    let path = config::config_path(xdg_config_home.as_deref(), &home_dir()?);
     Config::load(&path)
 }
 
@@ -225,24 +222,30 @@ fn agent_dir(xdg_runtime_dir: Option<&str>, uid: u32, pid: u32) -> PathBuf {
     base.join(pid.to_string())
 }
 
-/// 汎用コンテナを起動し、終了するまでホストエージェントを動かす。
+/// ホストエージェントを起動する。
 ///
-/// `docker run` は exec せずに子プロセスにする。コンテナが動いているあいだ、ランチャーが
-/// ホストに残って依頼を受けるため。端末は子がそのまま引き継ぐ。
-fn open(mut spec: RunSpec) -> Result<ExitCode, String> {
+/// XDG_RUNTIME_DIR が実在しない、または他のユーザーのもの(su の直後など)で使えない
+/// ときは、一時ディレクトリの下でやり直す。
+fn start_agent(spec: &RunSpec) -> Result<Agent, String> {
     let xdg_runtime_dir = std::env::var("XDG_RUNTIME_DIR").ok();
     let start = |xdg_runtime_dir: Option<&str>| {
         let dir = agent_dir(xdg_runtime_dir, spec.uid, std::process::id());
         Agent::start(dir, spec.workspace.clone(), spec.uid)
     };
-    // XDG_RUNTIME_DIR が実在しない、または他のユーザーのもの(su の直後など)で使えない
-    // ときは、一時ディレクトリの下でやり直す。
-    let agent = start(xdg_runtime_dir.as_deref())
+    start(xdg_runtime_dir.as_deref())
         .or_else(|e| match xdg_runtime_dir {
             Some(_) => start(None),
             None => Err(e),
         })
-        .map_err(|e| format!("ホストエージェントを起動できません: {e}"))?;
+        .map_err(|e| format!("ホストエージェントを起動できません: {e}"))
+}
+
+/// 汎用コンテナを起動し、終了するまでホストエージェントを動かす。
+///
+/// `docker run` は exec せずに子プロセスにする。コンテナが動いているあいだ、ランチャーが
+/// ホストに残って依頼を受けるため。端末は子がそのまま引き継ぐ。
+fn open(mut spec: RunSpec) -> Result<ExitCode, String> {
+    let agent = start_agent(&spec)?;
     spec.host_agent_dir = Some(agent.dir().to_path_buf());
 
     let mut child = Command::new("docker")
@@ -270,7 +273,6 @@ extern "C" fn forward_signal(signal: libc::c_int) {
 
 /// ランチャーに届いた終了のシグナルを、`docker run` に転送する。
 ///
-/// exec していたときは、シグナルは docker に直接届いていた。子プロセスにした今は、
 /// 転送しないとランチャーだけが終わり、docker が残って、エージェントのディレクトリも
 /// 消されない。転送して docker が終われば、いつもどおり後始末をして終了する。
 fn forward_signals_to(child: &std::process::Child) {
