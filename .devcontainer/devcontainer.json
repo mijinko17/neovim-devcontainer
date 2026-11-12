@@ -11,7 +11,9 @@
     "ghcr.io/devcontainers/features/node:1": {
       "version": "lts"
     },
-    "ghcr.io/anthropics/devcontainer-features/claude-code:1": {}
+    "ghcr.io/anthropics/devcontainer-features/claude-code:1": {},
+    // GitHub Actions の実行状況の確認などに使う。
+    "ghcr.io/devcontainers/features/github-cli:1": {}
   },
   // 下の bind mount は、マウント元がホストにないとコンテナが起動しない。
   // ホストで Claude Code を使ったことがない場合に備えて、空の状態で作っておく。
@@ -21,7 +23,9 @@
     "source=${localEnv:HOME}/.claude,target=/home/vscode/.claude,type=bind",
     // ~/.claude.json は書き込みのたびに置き換えられるので、ファイル単体では bind mount しない。
     // 読み取り専用で置いておき、post-create でコピーする。
-    "source=${localEnv:HOME}/.claude.json,target=/mnt/host-claude.json,type=bind,readonly"
+    "source=${localEnv:HOME}/.claude.json,target=/mnt/host-claude.json,type=bind,readonly",
+    // gh の認証情報。コンテナを作り直しても `gh auth login` をやり直さずに済むように volume に置く。
+    "source=neovim-devcontainer-gh-${devcontainerId},target=/home/vscode/.config/gh,type=volume"
   ],
   "postCreateCommand": "bash .devcontainer/post-create.sh",
   "customizations": {
