@@ -13,6 +13,9 @@
     },
     "ghcr.io/anthropics/devcontainer-features/claude-code:1": {}
   },
+  // 下の bind mount は、マウント元がホストにないとコンテナが起動しない。
+  // ホストで Claude Code を使ったことがない場合に備えて、空の状態で作っておく。
+  "initializeCommand": "mkdir -p \"$HOME/.claude\" && { [ -e \"$HOME/.claude.json\" ] || echo '{}' > \"$HOME/.claude.json\"; }",
   "mounts": [
     // Claude Code の認証情報と設定をホストと共有する。トークン更新も双方に反映される。
     "source=${localEnv:HOME}/.claude,target=/home/vscode/.claude,type=bind",
