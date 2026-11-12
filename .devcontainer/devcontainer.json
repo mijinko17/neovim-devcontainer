@@ -1,0 +1,35 @@
+{
+  "name": "neovim-devcontainer",
+  "image": "mcr.microsoft.com/devcontainers/rust:1",
+  "features": {
+    // ランチャーやプラグインが作る兄弟コンテナを、ホストの Docker を汚さずに試すため。
+    // コンテナ内のパスとデーモンから見たパスが一致するので、bind mount の検証も素直にできる。
+    "ghcr.io/devcontainers/features/docker-in-docker:2": {
+      "moby": false
+    },
+    // devcontainer CLI(@devcontainers/cli)の実行に使う。
+    "ghcr.io/devcontainers/features/node:1": {
+      "version": "lts"
+    },
+    "ghcr.io/anthropics/devcontainer-features/claude-code:1": {}
+  },
+  "mounts": [
+    // Claude Code の認証情報と設定をホストと共有する。トークン更新も双方に反映される。
+    "source=${localEnv:HOME}/.claude,target=/home/vscode/.claude,type=bind",
+    // ~/.claude.json は書き込みのたびに置き換えられるので、ファイル単体では bind mount しない。
+    // 読み取り専用で置いておき、post-create でコピーする。
+    "source=${localEnv:HOME}/.claude.json,target=/mnt/host-claude.json,type=bind,readonly"
+  ],
+  "postCreateCommand": "bash .devcontainer/post-create.sh",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "anthropic.claude-code",
+        "rust-lang.rust-analyzer",
+        "tamasfe.even-better-toml",
+        "sumneko.lua",
+        "ms-azuretools.vscode-docker"
+      ]
+    }
+  }
+}
