@@ -1,0 +1,74 @@
+# 汎用 Neovim イメージを ghcr.io に公開する。
+#
+# - main への push: `main` と `sha-<コミット>` のタグで公開する。開発中の最新版を試すためのもの。
+# - `v*` タグの push: `v0.1.0` なら `0.1.0` のタグで公開する。ランチャーは自分と同じ
+#   バージョンのタグを既定で使うので、タグはランチャーのバージョン(launcher/Cargo.toml)と
+#   一致している必要がある。
+name: image
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+    paths:
+      - image/**
+      - plugin/**
+      - lua/**
+      - .dockerignore
+      - .github/workflows/image.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: image-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      # タグとランチャーのバージョンが食い違うと、ランチャーが存在しないイメージを探すことになる。
+      - name: タグとランチャーのバージョンを照合する
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          crate=$(sed -n 's/^version = "\(.*\)"$/\1/p' launcher/Cargo.toml | head -n1)
+          if [ "$tag" != "$crate" ]; then
+            echo "::error::タグ ${GITHUB_REF_NAME} と launcher/Cargo.toml のバージョン ${crate} が一致しません"
+            exit 1
+          fi
+
+      # aarch64 のイメージを x86_64 のランナーで作るため。
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}
+          tags: |
+            type=ref,event=branch
+            type=sha,enable=${{ github.ref_type == 'branch' }}
+            type=semver,pattern={{version}}
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: image/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

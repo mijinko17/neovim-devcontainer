@@ -188,6 +188,10 @@ devcontainer の中で `nvim --headless --listen <socket>` を起動し、汎用
 
 - GitHub Actions で、タグを打つとランチャーのバイナリを GitHub Releases に、汎用イメージを ghcr.io に公開する。
 - ランチャーは、自分と同じバージョンのイメージを使う。`update` でランチャーを更新すると、次回の起動時に対応するイメージが取得される。
+- タグと `launcher/Cargo.toml` のバージョンが一致しないときは公開しない。ランチャーが存在しないイメージを探すことになるため。
+- イメージは main への push でも `main` と `sha-<コミット>` のタグで公開する。開発中の最新版を試すためのもので、ランチャーの既定には影響しない。設定ファイルの `image` で指定すれば使える。
+
+イメージの公開は [.github/workflows/image.yml](../.github/workflows/image.yml) で行う(ランチャーの公開はステップ5で追加する)。
 
 ## リポジトリ構成
 
