@@ -16,6 +16,8 @@ end
 
 --- 依頼を送り、応答の JSON を1つずつ on_reply に渡す。接続が閉じるまで待つ。
 local function request(req, on_reply)
+  -- 呼び出し側が available() を確かめてから呼ぶ。
+  local socket = assert(env.host_socket(), 'ホストエージェントのソケットが分からない')
   local err = async.await(function(done)
     local pipe = assert(vim.uv.new_pipe(false))
     local finished = false
@@ -29,7 +31,7 @@ local function request(req, on_reply)
     end
 
     local pending = ''
-    pipe:connect(env.host_socket(), function(connect_err)
+    pipe:connect(socket, function(connect_err)
       if connect_err then
         return finish('接続できません: ' .. connect_err)
       end

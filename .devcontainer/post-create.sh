@@ -7,6 +7,9 @@ sudo apt-get update
 sudo apt-get install -y --no-install-recommends musl-tools
 rustup target add "$(uname -m)-unknown-linux-musl"
 
+# プラグイン(Lua)の検査に使う Neovim・stylua・lua-language-server(scripts/check.sh)。
+sudo scripts/install-tools.sh
+
 # プラグインから呼ぶ devcontainer CLI
 npm install -g @devcontainers/cli
 

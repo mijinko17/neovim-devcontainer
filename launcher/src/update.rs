@@ -6,8 +6,8 @@
 //! GitHub がアセットごとに公開している SHA-256 ダイジェストと照合される(`checksums`
 //! フィーチャーの既定の動作)。
 
-use self_update::{UpdateStrategy, VersionStatus};
 use self_update::backends::github::Update;
+use self_update::{UpdateStrategy, VersionStatus};
 
 const REPO_OWNER: &str = "mijinko17";
 const REPO_NAME: &str = "neovim-devcontainer";

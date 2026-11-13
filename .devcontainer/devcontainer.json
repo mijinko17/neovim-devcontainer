@@ -35,6 +35,7 @@
         "rust-lang.rust-analyzer",
         "tamasfe.even-better-toml",
         "sumneko.lua",
+        "JohnnyMorganz.stylua",
         "ms-azuretools.vscode-docker"
       ]
     }

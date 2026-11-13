@@ -20,6 +20,31 @@ cargo build --release --target "$(uname -m)-unknown-linux-musl"
 
 成果物は `launcher/target/<arch>-unknown-linux-musl/release/nvim-dc`(`<arch>` は `x86_64` か `aarch64`)で、静的リンクの単一バイナリです。
 
+## 整形・静的解析・テスト
+
+push の前に、次のスクリプトで確かめます。main への push とプルリクエストでは、[ci.yml](../.github/workflows/ci.yml) が同じスクリプトを実行します。
+
+```sh
+scripts/check.sh            # すべて
+scripts/check.sh launcher   # ランチャー(Rust)だけ
+scripts/check.sh plugin     # プラグイン(Lua)だけ
+```
+
+| 対象 | | 内容 | 設定 |
+|---|---|---|---|
+| ランチャー | 整形 | `cargo fmt --check` | |
+| | lint | `cargo clippy -- -D warnings` | |
+| | テスト | `cargo test` | |
+| プラグイン | 整形 | `stylua --check lua plugin image/config tests` | [stylua.toml](../stylua.toml) |
+| | 静的解析 | `lua-language-server --check .`(警告以上で失敗) | [.luarc.json](../.luarc.json) |
+| | テスト | `nvim --headless -l tests/run.lua` | [tests/](../tests/) |
+
+プラグインの検査に使う Neovim・stylua・lua-language-server は、[scripts/install-tools.sh](../scripts/install-tools.sh) が入れます。開発用の devcontainer では作成時に実行されます。バージョンはこのスクリプトで固定していて(Neovim は汎用イメージと同じ版)、CI も同じものを使います。
+
+- 整形し直すには `cargo fmt`(`launcher/` で)と `stylua lua plugin image/config tests` を実行する。VS Code では、StyLua の拡張で保存時にもかけられる。
+- 引数の並びのように手で揃えたい Lua のコードは、直前に `-- stylua: ignore` を書く。
+- プラグインのテストの対象は、`plugins` の宣言の解釈や volume 名の組み立てなど、入力と出力だけで決まる処理。テストを足すには、`tests/<名前>_spec.lua` で「テスト名 → 関数」のテーブルを返す。Docker や devcontainer CLI を呼ぶ流れはテストせず、下の「動作確認」で確かめる。
+
 ## リリース
 
 1. `launcher/Cargo.toml` の `version` を上げ、`cargo build` で `Cargo.lock` に反映してコミットする。

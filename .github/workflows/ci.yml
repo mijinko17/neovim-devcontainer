@@ -1,0 +1,54 @@
+# ランチャー(Rust)とプラグイン(Lua)の、整形・静的解析・テストを確かめる。
+#
+# main への push とプルリクエストで動く。リリース(release.yml)はタグで動くので、
+# タグを打つ前に、そのコミットでこのワークフローが通っていることを確認する。
+name: ci
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - launcher/**
+      - lua/**
+      - plugin/**
+      - tests/**
+      - image/Dockerfile
+      - scripts/**
+      - stylua.toml
+      - .luarc.json
+      - .github/workflows/ci.yml
+  pull_request:
+    paths:
+      - launcher/**
+      - lua/**
+      - plugin/**
+      - tests/**
+      - image/Dockerfile
+      - scripts/**
+      - stylua.toml
+      - .luarc.json
+      - .github/workflows/ci.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # 検査の中身は scripts/check.sh にあり、手元でも同じものを実行できる。
+  launcher:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - run: scripts/check.sh launcher
+
+  plugin:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Neovim・stylua・lua-language-server を入れる
+        run: sudo scripts/install-tools.sh
+      - run: scripts/check.sh plugin

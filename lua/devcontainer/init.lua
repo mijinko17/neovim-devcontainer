@@ -78,6 +78,7 @@ end
 --- ホストの環境変数のうち、devcontainer CLI には渡さず、汎用コンテナの値を使うもの。
 --- CLI とそこから呼ばれる docker は汎用コンテナの中で動くので、実行ファイルの探し方や
 --- Docker への接続先は、コンテナ側に合わせる必要がある。
+-- stylua: ignore
 local CONTAINER_SIDE_ENV = {
   'PATH', 'TMPDIR', 'LD_LIBRARY_PATH', 'LD_PRELOAD',
   'DOCKER_HOST', 'DOCKER_CONTEXT', 'DOCKER_TLS_VERIFY', 'DOCKER_CERT_PATH',
@@ -125,7 +126,9 @@ end
 local function generic_image()
   local image = env.image()
   if not image then
-    async.fail('汎用イメージが分かりません(ランチャーから起動した汎用コンテナの中で実行してください)')
+    async.fail(
+      '汎用イメージが分かりません(ランチャーから起動した汎用コンテナの中で実行してください)'
+    )
   end
   return image
 end
@@ -214,9 +217,12 @@ local function check_mounts(container_id, expected)
   end
   if #missing > 0 then
     async.fail(table.concat({
-      ('既存の devcontainer(%s)に、Neovim 用のマウントがありません:'):format(env.short_id(container_id)),
+      ('既存の devcontainer(%s)に、Neovim 用のマウントがありません:'):format(
+        env.short_id(container_id)
+      ),
       '  ' .. table.concat(missing, '\n  '),
-      'コンテナを削除してから、もう一度実行してください: docker rm -f ' .. env.short_id(container_id),
+      'コンテナを削除してから、もう一度実行してください: docker rm -f '
+        .. env.short_id(container_id),
     }, '\n'))
   end
 end
@@ -324,8 +330,15 @@ end
 local function install_plugins(workspace, result, declared, cli)
   -- 取得したファイルの所有者を、サーバを動かすユーザーに合わせる。
   local res = check({
-    'devcontainer', 'exec', '--workspace-folder', workspace, '--container-id', result.containerId,
-    'sh', '-c', 'echo "$(id -u):$(id -g)"',
+    'devcontainer',
+    'exec',
+    '--workspace-folder',
+    workspace,
+    '--container-id',
+    result.containerId,
+    'sh',
+    '-c',
+    'echo "$(id -u):$(id -g)"',
   }, 'devcontainer のユーザーの確認', cli)
   local user = vim.trim(res.stdout or ''):match('(%d+:%d+)$')
   if not user then
@@ -443,9 +456,20 @@ end
 --- devcontainer の中で nvim サーバを起動し、応答するまで待つ。
 local function start_server(workspace, result, custom, sock, cli)
   local args = {
-    'devcontainer', 'exec', '--workspace-folder', workspace, '--container-id', result.containerId,
-    'sh', '-c', START_SERVER, 'sh',
-    sock, env.server_log_path(result.containerId), env.runtime_dir .. '/bin/nvim', env.data_dir,
+    'devcontainer',
+    'exec',
+    '--workspace-folder',
+    workspace,
+    '--container-id',
+    result.containerId,
+    'sh',
+    '-c',
+    START_SERVER,
+    'sh',
+    sock,
+    env.server_log_path(result.containerId),
+    env.runtime_dir .. '/bin/nvim',
+    env.data_dir,
   }
   local site = #custom.plugins > 0 and plugins.site_dir or nil
   local config = custom.config and vim.fs.joinpath(result.remoteWorkspaceFolder, custom.config) or nil
@@ -469,7 +493,8 @@ end
 
 --- 未保存の変更があるバッファがあれば fail() する。
 local function check_unmodified()
-  local names = vim.iter(vim.api.nvim_list_bufs())
+  local names = vim
+    .iter(vim.api.nvim_list_bufs())
     :filter(function(b)
       return vim.bo[b].modified and vim.bo[b].buftype == ''
     end)

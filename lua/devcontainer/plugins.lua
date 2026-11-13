@@ -53,7 +53,11 @@ local function parse_plugin(spec)
   elseif source:find('^%a[%w+.-]*://') or source:find('^[%w_.-]+@[%w_.-]+:') then
     url = source
   else
-    async.fail(('プラグインの指定を解釈できません: %s(owner/repo か URL で指定してください)'):format(spec))
+    async.fail(
+      ('プラグインの指定を解釈できません: %s(owner/repo か URL で指定してください)'):format(
+        spec
+      )
+    )
   end
   local name = url:gsub('/+$', ''):gsub('%.git$', ''):match('([^/:]+)$')
   if not name or not name:find(NAME_PATTERN) or name == '.' or name == '..' then
@@ -71,7 +75,9 @@ local function parse_config(path)
     return part == '..'
   end)
   if path:sub(1, 1) == '/' or escapes then
-    async.fail('customizations.neovim.config はワークスペースの中の相対パスで指定してください: ' .. path)
+    async.fail(
+      'customizations.neovim.config はワークスペースの中の相対パスで指定してください: ' .. path
+    )
   end
   return (path:gsub('/+$', ''))
 end
@@ -163,6 +169,8 @@ done
 --- 取得したファイルを devcontainer のユーザーが書き換えられるように(ヘルプのタグの
 --- 生成など)、そのユーザーの UID/GID で実行する。
 function M.install_command(image, volume, user, plugins)
+  -- オプションと値の組が分かるように、整形はしない。
+  -- stylua: ignore
   local cmd = {
     'docker', 'run', '--rm', '--user', user,
     '--env', 'GIT_TERMINAL_PROMPT=0',
