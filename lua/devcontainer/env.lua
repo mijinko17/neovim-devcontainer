@@ -11,6 +11,10 @@ M.socket_dir = '/run/nvim-dc'
 --- devcontainer の中で、汎用イメージの Neovim 本体(/opt/nvim)をマウントする場所。
 M.runtime_dir = '/opt/nvim-dc-runtime'
 
+--- devcontainer の中で、プラグインと Neovim の data ディレクトリを置く named volume を
+--- マウントする場所。
+M.data_dir = '/opt/nvim-dc-data'
+
 --- ランチャーが渡す環境変数。未設定と空文字は nil にする。
 local function launcher_env(name)
   local value = vim.env[name]
@@ -59,6 +63,19 @@ function M.runtime_volume()
     version = version .. '-' .. tostring(v.build or v.prerelease)
   end
   return 'nvim-dc-nvim-' .. version:gsub('[^%w_.-]', '-')
+end
+
+--- devcontainer ごとの、プラグインと Neovim の data ディレクトリを置く named volume の名前。
+---
+--- コンテナを作る前にマウントを決めるので、コンテナ ID ではなくワークスペースのパスから
+--- 決める(devcontainer CLI も、ワークスペースのパスでコンテナを見分ける)。
+function M.data_volume(workspace)
+  return 'nvim-dc-data-' .. vim.fn.sha256(workspace):sub(1, 12)
+end
+
+--- `docker run` や `devcontainer up` の `--mount` に渡す、named volume のマウントの指定。
+function M.volume_mount(volume, target)
+  return ('type=volume,source=%s,target=%s'):format(volume, target)
 end
 
 --- コンテナ ID の短縮形(docker の表示と同じ先頭12桁)。

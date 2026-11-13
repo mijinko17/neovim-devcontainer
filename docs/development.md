@@ -79,6 +79,11 @@ mounts = [
 
 ワークスペースに `devcontainer.json` を置いて汎用コンテナを起動し、`:DevcontainerConnect` を実行します。初回は devcontainer のイメージのビルドで時間がかかり、その間は画面下に `devcontainer up` のログが出ます。
 
-- `:DevcontainerUp` は devcontainer を作成するだけで、接続はしない。
+- `:DevcontainerUp` は devcontainer を作成する(宣言されたプラグインの取得を含む)だけで、接続はしない。
+- `customizations.neovim` の `plugins` には `owner/repo` か Git の URL を書き、`@v1.3` のようにタグ・ブランチ・コミットを付けて固定できる。
+- `customizations.neovim` の `plugins` は、volume `nvim-dc-data-<ワークスペースのパスのハッシュ>` の `site/pack/devcontainer/start/` に入る。devcontainer の中では `/opt/nvim-dc-data` にある。取得のログも画面下に出る。
+- `customizations.neovim` の `config` のディレクトリは、devcontainer の中の nvim の runtimepath に足され、その `init.lua` が起動時に実行される。`plugins` で入れたプラグインの設定をここに書く。
+- devcontainer の中の `~/.local/share/nvim` は、同じ volume の `nvim/` へのシンボリックリンクになる。`config` の中で `vim.pack` などが入れたプラグインはここに残る。
+- `plugins` や `config` を変えたら、devcontainer の中の nvim を `:qa` で終了してから `:DevcontainerConnect` し直す。動いているサーバには反映されない。
 - サーバのログは、ソケットと同じ `/run/nvim-dc/<コンテナ ID の先頭12桁>.log` にある。
 - 以前に別の方法(VS Code など)で作った devcontainer は、Neovim 用のマウントがないのでエラーになる。表示される `docker rm -f` でコンテナを削除してから実行し直す。

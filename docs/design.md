@@ -5,7 +5,7 @@
 ## 目的
 
 1. devcontainer の標準的な設定ファイル(`devcontainer.json`)に基づいて、Neovim から devcontainer を作成し、接続して編集できる。
-2. devcontainer の中で動く Neovim のプラグインを、ローカルのものと devcontainer 側で指定したものをマージして決められる。
+2. devcontainer の中で動く Neovim のプラグインと設定を、`devcontainer.json` で宣言できる。
 
 ホストに必要なのは Docker だけとします。ホストに Neovim や `devcontainer` CLI が入っていることは前提にしません。
 
@@ -17,7 +17,7 @@
 |---|---|---|
 | ランチャー | Rust の単一バイナリ | `docker run` を組み立てて汎用コンテナを起動する。自分自身の更新も行う |
 | 汎用 Neovim イメージ | Docker イメージ | UI 側の Neovim が動く場所。devcontainer の作成と管理もここから行う |
-| プラグイン | Lua | devcontainer の作成・接続・プラグインのマージなど、ロジックのすべて |
+| プラグイン | Lua | devcontainer の作成・接続・プラグインの導入など、ロジックのすべて |
 
 実行時のコンテナの関係は次のとおりです。
 
@@ -153,7 +153,7 @@ Docker ソケットをマウントするので、このコンテナの中で動�
 
 volume はバージョンごとに `nvim-dc-nvim-<バージョン>` の名前で作ります。空の named volume を汎用イメージの `/opt/nvim` にマウントするとイメージ側の内容がコピーされるので、その仕組みで中身を入れます。devcontainer CLI の `--mount` は読み取り専用を指定できないので、マウントは読み書き可能になります。
 
-devcontainer CLI は、ワークスペースのパスから既存のコンテナを探して使い回します。VS Code などで作ったコンテナにはこのマウントがないので、その場合はコンテナの削除を促すエラーにします。
+devcontainer CLI は、ワークスペースのパスから既存のコンテナを探して使い回します。VS Code などで作ったコンテナには Neovim 用のマウント(Neovim 本体、ソケット、プラグインの置き場所)がないので、その場合はコンテナの削除を促すエラーにします。
 
 Neovim の公式ビルドは glibc を前提にしているので、Alpine など musl 系のイメージではこの方法が使えません。その場合は `--additional-features` で Neovim を入れる Feature を注入する方式に切り替えます。
 
@@ -179,32 +179,74 @@ devcontainer の中で `nvim --headless --listen <socket>` を起動し、汎用
 
 ホスト側の Neovim で編集し、LSP だけを `docker exec` でコンテナ内で動かす方式は採りません。パスの変換などプラグインごとの対応が必要になり、破綻しやすいためです。
 
-### プラグインのマージ
+### プラグインと設定
 
-マージするのはプラグインの「宣言」です。インストールされた実体はホストや汎用コンテナと共有しません。
-
-**ローカル側**は、汎用コンテナが持つ Neovim の設定です。devcontainer にも読み取り専用でマウントし、そのまま読み込みます。
-
-> **未決**: 当初はホストの `~/.config/nvim` をマウントしてローカル側にする予定でしたが、ランチャーはホストの設定をマウントしないことにしました。ローカル側の設定をどこから持ってくるかは、ステップ3で決め直します。
-
-**devcontainer 側**は、`devcontainer.json` の `customizations.neovim` に宣言します。`customizations` は仕様が定めるツール別の拡張ポイントで、`customizations.vscode.extensions` と同じ位置づけです。
+devcontainer の中の Neovim で使うプラグインと設定は、`devcontainer.json` の `customizations.neovim` に宣言します。`customizations` は仕様が定めるツール別の拡張ポイントで、`customizations.vscode.extensions` と同じ位置づけです。
 
 ```jsonc
 "customizations": {
   "neovim": {
-    "plugins": ["rust-lang/rust.vim"],
-    "lua": ".devcontainer/nvim.lua"
+    "plugins": ["neovim/nvim-lspconfig", "tpope/vim-commentary@v1.3"],
+    "config": ".devcontainer/nvim"
   }
 }
 ```
 
-マージの規則は次のとおりです。
+VS Code の `extensions` と `settings` にならって、役割を2つに分けます。
 
-- devcontainer 側のプラグインは、devcontainer 内の専用ディレクトリ `pack/devcontainer/start/` にインストールする。Neovim 標準のパッケージ機構を使うので、ローカル側のプラグインマネージャが何であっても動く。
-- 同じプラグインが両方にある場合はローカル側を優先し、devcontainer 側はスキップする。
-- 設定はローカルの `init.lua`、devcontainer 側の `lua` の順に読む。後に読む devcontainer 側が上書きする。
+- `plugins`: 何を入れるか。`owner/repo`(GitHub のリポジトリ)か Git の URL を並べる。末尾に `@v1.3` のように付けると、そのタグ・ブランチ・コミットに固定する(VS Code の `publisher.extension@1.2.3` と同じ書き方)。
+- `config`: 入れたプラグインの設定(`setup()` の呼び出しやキーマップなど)。Neovim の設定ディレクトリと同じ構成のディレクトリを、ワークスペースからの相対パスで指定する。
 
-プラグインの実体は、devcontainer ごとの named volume に置いたデータディレクトリにインストールします。treesitter のパーサや mason が入れるバイナリは、libc や CPU アーキテクチャが違うと動かないためです。初回の起動は遅くなりますが、volume に残るので2回目以降は再インストールしません。
+プラグインの宣言を `devcontainer.json` に置くのは、次の理由からです。
+
+- `devcontainer.json` を見れば、何が入るかが分かる。
+- 取得が `devcontainer up` の一部として、接続の前に終わる。
+- 取得は汎用イメージ側で行うので、devcontainer に git が要らない。
+- 宣言と実体が一致する(宣言から消せば削除される)。
+
+VS Code の拡張機能と違い、Neovim のプラグインの多くは設定のコードを書かないと動かず、JSON では書けません。それを `config` が受け持ちます。
+
+`plugins` に書けるのは、取得元とバージョンまでにします。遅延読み込みやビルド手順、依存関係の解決まで扱うと、既存のプラグインマネージャの再発明になるためです。それらが必要なときは、`config` の中でプラグインマネージャ(Neovim 標準の `vim.pack` や lazy.nvim など)を使えます。`config` はただの Lua なので止めませんが、これは逃げ道で、基本の置き場所は `plugins` です。
+
+```
+.devcontainer/nvim/
+  init.lua        起動時に実行される
+  lua/            require できる
+  plugin/, ftplugin/, after/ など   通常の設定と同じ規則で読まれる
+```
+
+ホストや汎用コンテナの Neovim の設定(ローカルの設定)は、devcontainer には持ち込みません。当初はローカルの設定と devcontainer 側の宣言をマージする予定でしたが、ランチャーがホストの設定をマウントしないことにしたのに合わせて、いったんやめています。今後どうするかは決めていません。持ち込む場合は、同じプラグインが両方にあるときの優先順位と、設定を読む順序を決める必要があります。
+
+devcontainer の中にそのユーザーの設定(`~/.config/nvim`)があれば、Neovim が通常どおり読み込みます。順序は `config` のディレクトリが先、ユーザーの設定があとです。
+
+#### `config` の読み込み
+
+サーバを起動するときに、`--cmd` で次のことをします。
+
+- `config` のディレクトリを `runtimepath` の先頭に、その `after/` を末尾に足す。
+- `init.lua` があれば実行する。
+
+`--cmd` は Neovim が設定を読む前に実行されるので、`init.lua` が先、`plugin/` があとという、通常の設定と同じ順序になります。`plugins` で宣言したプラグインは、`init.lua` の時点で `require` できます。
+
+Neovim から見た設定ディレクトリ(`stdpath('config')`)は、devcontainer のユーザーの `~/.config/nvim` のままです。環境変数(`XDG_CONFIG_HOME`)で `config` のディレクトリに向けることもできますが、nvim から起動するコマンド(git など)の設定の場所まで変わるので採りません。このため、`config` の中で `vim.pack` を使うと、ロックファイル(`nvim-pack-lock.json`)は `~/.config/nvim` に作られ、リポジトリには入らず、コンテナを作り直すと消えます。devcontainer に git も必要です。これも、プラグインの宣言を `plugins` に置く理由の1つです。
+
+#### `plugins` の取得
+
+`plugins` のプラグインは、devcontainer 内の専用ディレクトリ `pack/devcontainer/start/` にインストールします。Neovim 標準のパッケージ機構を使うので、`config` やユーザーの設定がどのプラグインマネージャを使っていても動きます。
+
+- **置き場所**: volume `nvim-dc-data-<ワークスペースのパスのハッシュ>` を devcontainer の `/opt/nvim-dc-data` にマウントし、その下の `site/pack/devcontainer/start/` に置く。マウントはコンテナを作るときに決めるので、名前はコンテナ ID ではなくワークスペースのパスから決める。
+- **取得**: `devcontainer up` のあと、汎用イメージのコンテナにこの volume をマウントして `git clone` する。devcontainer に git があるとは限らないためです。取得したファイルを devcontainer のユーザーが書き換えられるように、そのユーザーの UID/GID で実行する。
+- **宣言との一致**: まだないものと、取得元かバージョンの指定が変わったものを取得し、宣言から消えたプラグインは削除する。何から取得したかは、プラグインのディレクトリの中の `.nvim-dc-source` に記録する。取得に失敗したときは、いままでのものを残す。
+- **バージョン**: 指定がなければ、取得した時点の既定ブランチの先頭になり、その後は更新しない。更新の手段は `:DevcontainerRebuild`(ステップ4)で用意する。
+- **読み込み**: サーバを起動するときに `site` を `packpath` の先頭に足す。
+
+#### data ディレクトリの永続化
+
+Neovim の data ディレクトリ(`stdpath('data')`)は、同じ volume の `/opt/nvim-dc-data/nvim` に載せます。treesitter のパーサや mason が入れるバイナリ、`config` の中でプラグインマネージャを使った場合のプラグインを、コンテナを作り直しても残すためです。これらは libc や CPU アーキテクチャが違うと動かないので、ホストや汎用コンテナとは共有せず、devcontainer ごとの volume に置きます。
+
+サーバを起動するときに、data ディレクトリ(`~/.local/share/nvim`)を volume へのシンボリックリンクにします。環境変数(`XDG_DATA_HOME`)で場所を変えると nvim から起動するコマンドにも影響するので、リンクにします。すでに data ディレクトリがあるイメージや、HOME に書き込めないユーザーでは何もしません(永続化されないだけで、動作は変わらない)。
+
+`plugins` や `config` の変更は、動いているサーバには反映されません。サーバを起動し直します(`:qa` してから `:DevcontainerConnect`)。
 
 ## リリース
 
@@ -246,7 +288,7 @@ docs/       ドキュメント
 
 1. **検証用の最小構成**: イメージと、`docker run` を組み立てるだけのランチャーを作り、上の未検証の前提2点を確かめる。
 2. **Up / Connect**: `devcontainer.json` から devcontainer を作成して接続するまで。
-3. **プラグインのマージ**: `customizations.neovim` の読み取りと適用。
+3. **プラグインと設定**: `customizations.neovim` の読み取りと適用。
 4. **Rebuild / Down と仕上げ**: musl 系イメージ向けの Feature への切り替えを含む。
 5. **自己更新とリリース**: `update` サブコマンドと、リリース用のワークフロー。
 
