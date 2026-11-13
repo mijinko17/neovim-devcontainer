@@ -12,8 +12,8 @@ on:
     tags: ["v*"]
     paths:
       - image/**
-      - plugin/**
-      - lua/**
+      - plugin/plugin/**
+      - plugin/lua/**
       - .dockerignore
       - .github/workflows/image.yml
   workflow_dispatch:

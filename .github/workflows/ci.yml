@@ -9,9 +9,8 @@ on:
     branches: [main]
     paths:
       - launcher/**
-      - lua/**
       - plugin/**
-      - tests/**
+      - image/config/**
       - image/Dockerfile
       - scripts/**
       - stylua.toml
@@ -20,9 +19,8 @@ on:
   pull_request:
     paths:
       - launcher/**
-      - lua/**
       - plugin/**
-      - tests/**
+      - image/config/**
       - image/Dockerfile
       - scripts/**
       - stylua.toml

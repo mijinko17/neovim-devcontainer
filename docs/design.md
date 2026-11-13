@@ -267,10 +267,10 @@ Neovim の data ディレクトリ(`stdpath('data')`)は、同じ volume の `/o
 ```
 launcher/   ランチャー(Rust クレート)
 image/      汎用 Neovim イメージの Dockerfile
-plugin/     プラグインのコマンド定義
-lua/        プラグイン本体
+plugin/     プラグイン(plugin/ がコマンド定義、lua/ が本体、tests/ がテスト)
+scripts/    整形・静的解析・テストの実行と、それに使うツールの導入
 docs/       ドキュメント
-.github/    リリース用ワークフロー
+.github/    CI とリリースのワークフロー
 ```
 
 ## 未検証の前提
@@ -295,4 +295,4 @@ docs/       ドキュメント
 4. **Rebuild / Down と仕上げ**: musl 系イメージ向けの Feature への切り替えを含む。
 5. **自己更新とリリース**: `update` サブコマンドと、リリース用のワークフロー。
 
-開発中は、リポジトリを汎用コンテナにマウントしてプラグインを読み込ませます(手順は [development.md](development.md))。
+開発中は、リポジトリの `plugin/` を汎用コンテナにマウントしてプラグインを読み込ませます(手順は [development.md](development.md))。

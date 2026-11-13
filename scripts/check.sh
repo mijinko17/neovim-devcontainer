@@ -50,9 +50,9 @@ check_plugin() {
       return
     fi
   done
-  run 'プラグイン: 整形' stylua --check lua plugin image/config tests
+  run 'プラグイン: 整形' stylua --check plugin image/config
   run 'プラグイン: 静的解析' analyze_plugin
-  run 'プラグイン: テスト' nvim --headless -l tests/run.lua
+  run 'プラグイン: テスト' nvim --headless -l plugin/tests/run.lua
 }
 
 if [ $# -eq 0 ]; then

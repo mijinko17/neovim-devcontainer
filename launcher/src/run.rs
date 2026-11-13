@@ -18,7 +18,7 @@ const PERSISTENT_VOLUMES: [(&str, &str); 3] = [
 
 /// UI 側と devcontainer 側の nvim が通信する Unix ソケットを置く named volume と、そのマウント先。
 ///
-/// プラグイン(`lua/devcontainer/env.lua`)も同じ名前とパスを使う。イメージ側でマウント先を
+/// プラグイン(`plugin/lua/devcontainer/env.lua`)も同じ名前とパスを使う。イメージ側でマウント先を
 /// 1777 で用意してあるので、volume は初回マウント時にその権限を引き継ぎ、devcontainer 側の
 /// どのユーザーでもソケットを作れる。
 const SOCKET_VOLUME: (&str, &str) = ("nvim-dc-sockets", "/run/nvim-dc");

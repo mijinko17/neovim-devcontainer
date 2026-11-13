@@ -3,7 +3,7 @@
 # UI 側の Neovim が動く場所。devcontainer の作成と管理もここから行う。
 # 実行ユーザーはランチャーがホストの UID/GID で指定するので、どの UID でも動くように作る。
 #
-# プラグイン(lua/、plugin/)を入れるので、ビルドコンテキストはリポジトリのルートにする。
+# プラグイン(plugin/)を入れるので、ビルドコンテキストはリポジトリのルートにする。
 #   docker build -t nvim-dc:dev -f image/Dockerfile .
 
 ARG DOCKER_VERSION=29
@@ -61,8 +61,8 @@ RUN npm install -g "@devcontainers/cli@${DEVCONTAINER_CLI_VERSION}" \
 COPY image/config/init.lua /etc/xdg/nvim/init.lua
 
 # 本プラグイン。エントリポイントが読み込む。
-COPY plugin /opt/nvim-dc/plugin
-COPY lua /opt/nvim-dc/lua
+COPY plugin/plugin /opt/nvim-dc/plugin
+COPY plugin/lua /opt/nvim-dc/lua
 
 # どの UID で動いても書き込めるように、HOME と永続化先を 1777 で用意する。
 # named volume は初回マウント時にイメージ側のパーミッションを引き継ぐ。

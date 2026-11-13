@@ -1,8 +1,8 @@
 -- プラグインのテストを実行する。テスト用のプラグインには頼らない。
 --
---   nvim --headless -l tests/run.lua
+--   nvim --headless -l plugin/tests/run.lua
 --
--- `tests/*_spec.lua` は「テスト名 → 関数」のテーブルを返す。関数がエラーにならなければ成功。
+-- `plugin/tests/*_spec.lua` は「テスト名 → 関数」のテーブルを返す。関数がエラーにならなければ成功。
 -- 対象は、入力と出力だけで決まる処理に絞っている。Docker や devcontainer CLI を呼ぶ流れは
 -- 手で確かめる(docs/development.md の「動作確認」)。
 local tests_dir = vim.fs.dirname(vim.fs.normalize(vim.fn.fnamemodify(debug.getinfo(1, 'S').source:sub(2), ':p')))

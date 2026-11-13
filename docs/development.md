@@ -4,7 +4,7 @@
 
 ## 汎用イメージのビルド
 
-プラグイン(`plugin/`、`lua/`)もイメージに入れるので、ビルドコンテキストはリポジトリのルートにします。
+プラグイン(`plugin/`)もイメージに入れるので、ビルドコンテキストはリポジトリのルートにします。
 
 ```sh
 docker build -t nvim-dc:dev -f image/Dockerfile .
@@ -35,15 +35,15 @@ scripts/check.sh plugin     # プラグイン(Lua)だけ
 | ランチャー | 整形 | `cargo fmt --check` | |
 | | lint | `cargo clippy -- -D warnings` | |
 | | テスト | `cargo test` | |
-| プラグイン | 整形 | `stylua --check lua plugin image/config tests` | [stylua.toml](../stylua.toml) |
+| プラグイン | 整形 | `stylua --check plugin image/config` | [stylua.toml](../stylua.toml) |
 | | 静的解析 | `lua-language-server --check .`(警告以上で失敗) | [.luarc.json](../.luarc.json) |
-| | テスト | `nvim --headless -l tests/run.lua` | [tests/](../tests/) |
+| | テスト | `nvim --headless -l plugin/tests/run.lua` | [plugin/tests/](../plugin/tests/) |
 
 プラグインの検査に使う Neovim・stylua・lua-language-server は、[scripts/install-tools.sh](../scripts/install-tools.sh) が入れます。開発用の devcontainer では作成時に実行されます。バージョンはこのスクリプトで固定していて(Neovim は汎用イメージと同じ版)、CI も同じものを使います。
 
-- 整形し直すには `cargo fmt`(`launcher/` で)と `stylua lua plugin image/config tests` を実行する。VS Code では、StyLua の拡張で保存時にもかけられる。
+- 整形し直すには `cargo fmt`(`launcher/` で)と `stylua plugin image/config` を実行する。VS Code では、StyLua の拡張で保存時にもかけられる。
 - 引数の並びのように手で揃えたい Lua のコードは、直前に `-- stylua: ignore` を書く。
-- プラグインのテストの対象は、`plugins` の宣言の解釈や volume 名の組み立てなど、入力と出力だけで決まる処理。テストを足すには、`tests/<名前>_spec.lua` で「テスト名 → 関数」のテーブルを返す。Docker や devcontainer CLI を呼ぶ流れはテストせず、下の「動作確認」で確かめる。
+- プラグインのテストの対象は、`plugins` の宣言の解釈や volume 名の組み立てなど、入力と出力だけで決まる処理。テストを足すには、`plugin/tests/<名前>_spec.lua` で「テスト名 → 関数」のテーブルを返す。Docker や devcontainer CLI を呼ぶ流れはテストせず、下の「動作確認」で確かめる。
 
 ## リリース
 
@@ -81,11 +81,11 @@ mounts = [
 launcher/target/"$(uname -m)"-unknown-linux-musl/release/nvim-dc [path]
 ```
 
-開発中のプラグインを、イメージを作り直さずに試すには、リポジトリをイメージ内のプラグインの場所(`/opt/nvim-dc`)に重ねてマウントします。
+開発中のプラグインを、イメージを作り直さずに試すには、リポジトリの `plugin/` をイメージ内のプラグインの場所(`/opt/nvim-dc`)に重ねてマウントします。
 
 ```toml
 mounts = [
-  "type=bind,source=/workspaces/neovim-devcontainer,target=/opt/nvim-dc,readonly",
+  "type=bind,source=/workspaces/neovim-devcontainer/plugin,target=/opt/nvim-dc,readonly",
 ]
 ```
 
