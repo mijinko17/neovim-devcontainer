@@ -20,6 +20,25 @@ cargo build --release --target "$(uname -m)-unknown-linux-musl"
 
 成果物は `launcher/target/<arch>-unknown-linux-musl/release/nvim-dc`(`<arch>` は `x86_64` か `aarch64`)で、静的リンクの単一バイナリです。
 
+## リリース
+
+1. `launcher/Cargo.toml` の `version` を上げ、`cargo build` で `Cargo.lock` に反映してコミットする。
+2. そのバージョンに `v` を付けたタグ(`0.2.0` なら `v0.2.0`)を打って push する。
+
+```sh
+git tag v0.2.0
+git push origin main v0.2.0
+```
+
+タグの push で、2つのワークフローが動きます。
+
+- [image.yml](../.github/workflows/image.yml): 汎用イメージを `ghcr.io/mijinko17/neovim-devcontainer:0.2.0` で公開する。
+- [release.yml](../.github/workflows/release.yml): ランチャーを x86_64 と aarch64 向けにビルドし、イメージの公開を待ってから、`nvim-dc-0.2.0-<ターゲット>.tar.gz` を GitHub Releases に公開する。
+
+タグと `launcher/Cargo.toml` のバージョンが一致しないと、どちらも失敗します。release.yml は手動でも実行でき(Actions の画面か `gh workflow run release.yml`)、その場合はビルドした成果物を残すだけでリリースは作りません。
+
+利用者は `nvim-dc update` で最新のリリースに更新できます。実行ファイルをその場で置き換えるので、置き場所に書き込めるユーザーで実行します。
+
 ## ローカルでビルドしたイメージで起動する
 
 既定では `ghcr.io/mijinko17/neovim-devcontainer:<ランチャーのバージョン>` を使います。ローカルのイメージを使うには、設定ファイル `~/.config/nvim-dc/config.toml`(`$XDG_CONFIG_HOME` があればその下)で差し替えます。

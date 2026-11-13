@@ -97,14 +97,15 @@ nvim-dc pull       # 汎用イメージを取得し直す
 GitHub Releases から最新版を取得して、実行ファイルを置き換えます。実装には [self_update](https://github.com/jaemk/self_update) クレートを使います。
 
 ```toml
-self_update = { version = "1.3", default-features = false, features = [
+self_update = { version = "1.3.3", default-features = false, features = [
   "github", "ureq", "rustls", "checksums", "archive-tar", "compression-tar-gz",
 ] }
 ```
 
 - **チェックサム検証**: `checksums` フィーチャーで、GitHub がリリースアセットごとに公開している SHA-256 ダイジェストと照合する。
 - **HTTP と TLS**: `ureq` と `rustls` を使う。OpenSSL に依存しないので musl ビルドと相性がよい。
-- **アセットの命名**: `<名前>-<バージョン>-<ターゲット>.<拡張子>` の規約でリリースする。クレートが実行中のターゲットに合うものを選ぶ。
+- **アセットの命名**: `nvim-dc-<バージョン>-<ターゲット>.tar.gz` でリリースし、アーカイブの直下に `nvim-dc` を置く。クレートが、名前にビルド時のターゲット(`x86_64-unknown-linux-musl` など)を含むものを選ぶ。
+- **確認はしない**: 明示的に実行するコマンドなので、置き換えの前に確認は挟まない。最新のリリースが自分より新しくなければ何もしない。途中のバージョンは飛ばして、常にいちばん新しいリリースへ更新する。
 - **更新は明示実行のみ**: 起動のたびに更新を確認することはしない。起動が遅くなり、オフラインで引っかかるためです。
 - **リポジトリは公開前提**: 非公開にする場合は Releases の取得にトークンが必要になる。
 
@@ -257,7 +258,9 @@ Neovim の data ディレクトリ(`stdpath('data')`)は、同じ volume の `/o
 - タグと `launcher/Cargo.toml` のバージョンが一致しないときは公開しない。ランチャーが存在しないイメージを探すことになるため。
 - イメージは main への push でも `main` と `sha-<コミット>` のタグで公開する。開発中の最新版を試すためのもので、ランチャーの既定には影響しない。設定ファイルの `image` で指定すれば使える。
 
-イメージの公開は [.github/workflows/image.yml](../.github/workflows/image.yml) で行う(ランチャーの公開はステップ5で追加する)。
+- ランチャーのリリースは、同じタグのイメージが公開されてから作る。先に出すと、`update` したランチャーがまだないイメージを探して起動に失敗するため。
+
+イメージの公開は [.github/workflows/image.yml](../.github/workflows/image.yml)、ランチャーの公開は [.github/workflows/release.yml](../.github/workflows/release.yml) で行う。
 
 ## リポジトリ構成
 
@@ -282,7 +285,7 @@ docs/       ドキュメント
    - **注意**: 新規の named volume は root 所有になるので、root 以外で動くサーバはソケットを作れずに終了した。ソケット用の volume は、サーバ側のユーザーが書き込めるように権限を整えておく必要がある。ステップ2で、イメージ側のマウント先 `/run/nvim-dc` を 1777 で用意し、volume が初回マウント時にその権限を引き継ぐようにした。
    - 通らなかった場合の代案は、`docker exec -i` を経由した中継だった。
 
-`self_update` のフィーチャー指定は、名前は README と `Cargo.toml` で確認しましたが、ビルドは試していません(ステップ5で確かめる)。
+`self_update` のフィーチャー指定は、ステップ5で 1.3.3 を musl 向けにビルドして確かめました。実際のリリースからの置き換えは、最初のリリースを出してから確かめます。
 
 ## 実装の順序
 

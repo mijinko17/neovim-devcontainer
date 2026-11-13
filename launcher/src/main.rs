@@ -7,6 +7,7 @@
 mod agent;
 mod config;
 mod run;
+mod update;
 
 use std::ffi::OsString;
 use std::io::IsTerminal;
@@ -26,15 +27,17 @@ const DEFAULT_IMAGE_REPO: &str = "ghcr.io/mijinko17/neovim-devcontainer";
 const USAGE: &str = "\
 Usage:
   nvim-dc [path]     汎用コンテナを起動して nvim を開く(既定はカレントディレクトリ)
+  nvim-dc update     ランチャー自身を最新版に更新する
   nvim-dc pull       汎用イメージを取得し直す
   nvim-dc --help     このヘルプを表示する
   nvim-dc --version  バージョンを表示する
 
-`pull` という名前のディレクトリを開くときは `./pull` と指定してください。";
+`update` や `pull` という名前のディレクトリを開くときは `./pull` のように指定してください。";
 
 #[derive(Debug, PartialEq)]
 enum Cmd {
     Open(Option<PathBuf>),
+    Update,
     Pull,
     Help,
     Version,
@@ -44,6 +47,7 @@ fn parse_args(args: &[OsString]) -> Result<Cmd, String> {
     match args {
         [] => Ok(Cmd::Open(None)),
         [arg] => match arg.to_str() {
+            Some("update") => Ok(Cmd::Update),
             Some("pull") => Ok(Cmd::Pull),
             Some("-h" | "--help") => Ok(Cmd::Help),
             Some("-V" | "--version") => Ok(Cmd::Version),
@@ -63,6 +67,10 @@ fn main() -> ExitCode {
         }
         Cmd::Version => {
             println!("nvim-dc {}", env!("CARGO_PKG_VERSION"));
+            Ok(ExitCode::SUCCESS)
+        }
+        Cmd::Update => {
+            println!("{}", update::update()?);
             Ok(ExitCode::SUCCESS)
         }
         Cmd::Pull => {
@@ -319,6 +327,7 @@ mod tests {
             parse_args(&os(&["./pull"])),
             Ok(Cmd::Open(Some("./pull".into())))
         );
+        assert_eq!(parse_args(&os(&["update"])), Ok(Cmd::Update));
         assert_eq!(parse_args(&os(&["pull"])), Ok(Cmd::Pull));
         assert_eq!(parse_args(&os(&["--help"])), Ok(Cmd::Help));
         assert_eq!(parse_args(&os(&["-V"])), Ok(Cmd::Version));

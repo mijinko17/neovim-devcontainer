@@ -1,0 +1,116 @@
+# ランチャーのバイナリを GitHub Releases に公開する。
+#
+# - `v*` タグの push: linux の x86_64 と aarch64 向けにビルドし、リリースを作る。
+#   アセットは `nvim-dc-<バージョン>-<ターゲット>.tar.gz` で、直下に `nvim-dc` が入る。
+#   `nvim-dc update`(launcher/src/update.rs)がこの名前と構成を前提にしている。
+# - 手動実行: ビルドして成果物を残すだけで、リリースは作らない。ワークフローの確認用。
+#
+# 同じタグで汎用イメージも公開される(image.yml)。
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-musl
+            runner: ubuntu-latest
+          - target: aarch64-unknown-linux-musl
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    defaults:
+      run:
+        working-directory: launcher
+    steps:
+      - uses: actions/checkout@v5
+
+      - id: version
+        name: バージョンを読み取る
+        run: |
+          version=$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -n1)
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      # タグとランチャーのバージョンが食い違うと、`update` が同じ版を何度も入れ直したり、
+      # ランチャーが存在しないイメージを探したりすることになる。
+      - name: タグとランチャーのバージョンを照合する
+        if: github.ref_type == 'tag'
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          if [ "${GITHUB_REF_NAME#v}" != "$VERSION" ]; then
+            echo "::error::タグ ${GITHUB_REF_NAME} と launcher/Cargo.toml のバージョン ${VERSION} が一致しません"
+            exit 1
+          fi
+
+      - name: musl のツールチェーンを入れる
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends musl-tools
+          rustup target add ${{ matrix.target }}
+
+      - run: cargo test --locked
+
+      - run: cargo build --release --locked --target ${{ matrix.target }}
+
+      - id: package
+        name: アーカイブにまとめる
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          archive="nvim-dc-${VERSION}-${{ matrix.target }}.tar.gz"
+          tar -C "target/${{ matrix.target }}/release" -czf "$archive" nvim-dc
+          echo "archive=$archive" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.target }}
+          path: launcher/${{ steps.package.outputs.archive }}
+          if-no-files-found: error
+
+  publish:
+    if: github.ref_type == 'tag'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      # リリースを先に出すと、`update` したランチャーがまだないイメージを探して起動に失敗する。
+      # image.yml が同じタグのイメージを公開し終えるまで待つ。
+      - name: 汎用イメージの公開を待つ
+        run: |
+          image="ghcr.io/${GITHUB_REPOSITORY}:${GITHUB_REF_NAME#v}"
+          for _ in $(seq 60); do
+            if docker manifest inspect "$image" > /dev/null 2>&1; then
+              exit 0
+            fi
+            sleep 30
+          done
+          echo "::error::${image} が公開されません。image.yml の実行結果を確認してください"
+          exit 1
+
+      - name: リリースを作る
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" dist/*.tar.gz \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "$GITHUB_REF_NAME" \
+            --generate-notes \
+            --verify-tag
